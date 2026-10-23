@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+if Path('settings.json').exists():
+    with open('settings.json') as f: json.dump(json.load(f), sys.stdout)
+else:
+    json.dump({'configured': False}, sys.stdout)

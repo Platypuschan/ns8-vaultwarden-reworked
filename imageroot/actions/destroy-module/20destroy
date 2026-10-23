@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+import os
+import agent
+import agent.tasks
+traefik = agent.resolve_agent_id('traefik@node')
+if traefik:
+    result = agent.tasks.run(agent_id=traefik, action='delete-route', data={'instance':os.environ['MODULE_ID']})
+    agent.assert_exp(result['exit_code'] == 0, 'Unable to remove route')

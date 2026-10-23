@@ -1,0 +1,30 @@
+name: Prototype validation
+on:
+  push:
+    branches: [codex/vaultwarden-sso]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: python3 tests/check_syntax.py
+  protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y podman
+      - run: python3 -m pip install requests==2.32.5
+      - run: podman build --layers -t localhost/ns8-idp-group-prototype -f prototype/idp/Containerfile prototype/idp
+      - run: podman build --layers -t localhost/ns8-vaultwarden-test-samba -f tests/integration/Samba.Containerfile tests/integration
+      - run: python3 tests/integration/run.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: protocol-test-logs
+          path: tests/outputs/

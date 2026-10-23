@@ -1,0 +1,10 @@
+# Build with the same Keycloak SPI version as the ns8-idp base image.
+FROM docker.io/library/maven:3.9-eclipse-temurin-21 AS provider
+WORKDIR /src
+COPY pom.xml .
+COPY src src
+RUN mvn -B -q package
+FROM ghcr.io/nethserver/idp-keycloak@sha256:94aee54fd9a0020a0853287596fc2531058e4020d341f0a8146a7a1b1ba654fe
+COPY --from=provider /src/target/ns8-client-group-gate.jar /opt/keycloak/providers/
+ENV KC_DB=postgres KC_FEATURES=scripts KC_HEALTH_ENABLED=true KC_CACHE=local
+RUN /opt/keycloak/bin/kc.sh build

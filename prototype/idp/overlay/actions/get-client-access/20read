@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+import idprealm
+import kcadmin
+import idpaccess
+
+request = json.load(sys.stdin)
+caller = os.getenv('AGENT_TASK_USER', '')
+if caller:
+    if not caller.startswith('module/') or 'client_id' in request:
+        raise ValueError('Only the calling module may inspect its own client policy')
+    client_id = caller.removeprefix('module/')
+else:
+    client_id = request['client_id']
+idprealm.require_keycloak()
+kc = kcadmin.agent_client()
+client = kc.find_client(request['domain'], client_id)
+if not client:
+    raise ValueError('Client not found')
+state = idpaccess.access_state(kc, request['domain'], client)
+state['enabled'] = client.get('enabled', True)
+json.dump(state, sys.stdout)

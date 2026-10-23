@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "host",
+    "domain",
+    "idp_module"
+  ],
+  "properties": {
+    "host": {
+      "type": "string",
+      "minLength": 3
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 3
+    },
+    "idp_module": {
+      "type": "string",
+      "minLength": 2
+    },
+    "required_group": {
+      "type": "string",
+      "default": "services_vaultwarden"
+    },
+    "lets_encrypt": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "additionalProperties": false
+}

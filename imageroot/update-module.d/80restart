@@ -1,0 +1,5 @@
+#!/bin/bash
+set -Eeuo pipefail
+if systemctl --user is-enabled --quiet vaultwarden.service; then
+    systemctl --user restart vaultwarden.service
+fi

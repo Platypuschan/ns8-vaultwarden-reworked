@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+import json
+import sys
+import agent
+import vaultwarden_config as policy
+import vaultwarden_sso
+
+config = policy.validate(json.load(sys.stdin))
+with agent.exclusive_file_lock('configuration'):
+    # Intended only before first activation. A live host/domain transition
+    # needs a separate migration flow, not a partial rewrite of credentials.
+    import subprocess
+    if subprocess.run(['systemctl', '--user', '-q', 'is-enabled', 'vaultwarden.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise ValueError('Already activated: use configure-module with the existing SSO identity')
+    registration = vaultwarden_sso.prepare(config)
+json.dump({'client_id': registration['client_id'], 'domain': config['domain'],
+    'required_group_path': '/' + config['required_group'], 'ready': False}, sys.stdout)

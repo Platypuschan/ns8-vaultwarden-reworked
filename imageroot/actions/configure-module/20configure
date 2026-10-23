@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import agent
+import agent.tasks
+import vaultwarden_config as policy
+import vaultwarden_sso
+
+config = policy.validate(json.load(sys.stdin))
+with agent.exclusive_file_lock('configuration'):
+    with open('settings.json') as f:
+        previous = json.load(f)
+    if any(config[k] != previous[k] for k in ('host', 'domain', 'idp_module')):
+        raise ValueError('Prepare SSO first; host/domain/IdP migrations are outside this prototype')
+    state = vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']})
+    policy.require_policy(config, state)
+    # Client registration preserves the IdP flow overrides and access attributes.
+    registration = vaultwarden_sso.prepare(config)
+    policy.require_policy(config, vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']}))
+    traefik = agent.resolve_agent_id('traefik@node')
+    agent.assert_exp(traefik is not None, 'Traefik not found')
+    response = agent.tasks.run(agent_id=traefik, action='set-route', data={
+        'instance': os.environ['MODULE_ID'], 'url': 'http://127.0.0.1:' + os.environ['TCP_PORT'],
+        'host': config['host'], 'http2https': True, 'lets_encrypt': config['lets_encrypt']})
+    agent.assert_exp(response['exit_code'] == 0, 'Traefik configuration failed')
+    subprocess.run(['systemctl', '--user', 'enable', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+    subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+json.dump({'configured': True, 'host': config['host']}, sys.stdout)
