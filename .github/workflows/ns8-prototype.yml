@@ -1,5 +1,14 @@
 name: NS8 prototype on QEMU
 on:
+  push:
+    branches: [codex/vaultwarden-sso]
+    paths:
+      - '.github/workflows/ns8-prototype.yml'
+      - 'Containerfile'
+      - 'imageroot/**'
+      - 'prototype/**'
+      - 'tests/ns8/**'
+      - 'test-module*.sh'
   workflow_dispatch:
 permissions:
   contents: read
