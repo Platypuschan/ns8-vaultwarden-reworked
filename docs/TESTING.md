@@ -2,10 +2,30 @@
 
 ## Stand des Branches claude/idp-upstream-integration (24.10.2026)
 
-Umbau nach [ADR 0002](decisions/0002-required-action-group-gate.md). **Nur lokal
-geprüft**; CI und NS8-QEMU für diesen Stand stehen aus, es gibt noch keine
-veröffentlichten Images. Die Abschnitte darunter beschreiben den vorherigen,
-in QEMU geprüften Stand `prototype-89a52bc0f978`.
+Umbau nach [ADR 0002](decisions/0002-required-action-group-gate.md), Commit
+`0dd6733`. Lokal, in CI und in NS8-QEMU geprüft; nicht live getestet. Die
+Abschnitte darunter beschreiben den vorherigen Stand `prototype-89a52bc0f978`.
+
+CI (Commit `0dd6733`):
+
+- [Prototype validation 40127209220](https://github.com/Platypuschan/ns8-vaultwarden/actions/runs/40127209220):
+  7 Unit-Tests, Syntax und 16 Protokolltests grün (65 s).
+- [NS8 prototype on QEMU 40127193380](https://github.com/Platypuschan/ns8-vaultwarden/actions/runs/40127193380):
+  Robot-Suite 9/9 auf Debian 13 und Rocky 9, Core 3.23.2. Geprüft:
+  `alter-realm-client` mit `access_group`, `list-realms` und
+  `get-client-access` mit leeren `issues`, Ablehnung von `alter-realm-client`
+  durch die Anwendung, gleichzeitige Reconciliation, Backup/Neustart, Entfernen.
+
+Tag `prototype-0dd673332309`:
+
+| Image | Digest |
+|---|---|
+| `idp-keycloak` | `sha256:eb76b6d0a4b6aa5c7f9c8a2ef20a67101feecfb53f4f4f325c7f9bda68f22d3f` |
+| `idp-vaultwarden-prototype` | `sha256:14c67cce8dac0b87c973b1306dab57f4b09e37d4ecfa6c72922695fd5f786a54` |
+| `vaultwarden-server` | `sha256:1c2ec53c946772d0d06e43678ae3e1a143fb8f55f2a6d57d664e5b5fba206921` |
+| `vaultwarden` | `sha256:11ca0ea3d53fa63d0430f6eb3e9d8ad3b96d47fceb38d7a4e8d15766580fa088` |
+
+Lokal:
 
 | Prüfung | Ergebnis |
 |---|---|

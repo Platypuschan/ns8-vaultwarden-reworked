@@ -46,14 +46,9 @@ Die QEMU-Pipeline dieses Repositorys baut vier zusammengehörige Images mit
 [TESTING.md](TESTING.md) auswählen; **kein unbestimmtes `latest` verwenden**.
 Das Paket ist kein Katalog-/Stable-Release.
 
-Hinweis: Dieser Branch (Required Action statt Client-Flows) hat noch keinen
-veröffentlichten, in QEMU geprüften Tag. Der folgende Tag gehört zum vorherigen
-Stand mit `set-client-access`; für diesen Branch erst nach grünem QEMU-Lauf den
-neuen Tag aus TESTING.md eintragen.
-
 ```bash
 # Auf Debian 13 und Rocky 9 / Core 3.23.2 geprüfter Stand, siehe TESTING.md.
-VW_PROTOTYPE_TAG='prototype-89a52bc0f978'
+VW_PROTOTYPE_TAG='prototype-0dd673332309'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-vaultwarden-prototype:${VW_PROTOTYPE_TAG}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden:${VW_PROTOTYPE_TAG}"
 ```
