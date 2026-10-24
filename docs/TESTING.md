@@ -109,3 +109,27 @@ konsistenten Datensnapshot und Entfernung der Module.
 - Keine vollständige NS8-Cluster-Disaster-Recovery oder Migration vorhandener
   nicht-SSO-Tresorkonten.
 - Keine zugesicherte transitive Mitgliedschaft über verschachtelte AD-Gruppen.
+
+
+## NS8-Lauf f781b68 und gezielte Korrekturen
+
+Die zweite QEMU-Matrix ist abgeschlossen. Auf beiden Systemen funktionierten
+Installation, Samba-Provisionierung, OIDC-Vorbereitung und Gruppenregel.
+Rocky 9 aktivierte Vaultwarden einschließlich HTTPS und privater Credentials;
+Debian 13 traf den PostgreSQL-Schreibkonflikt zwischen Registrierung und
+IdP-Ereignisverarbeitung. Die IdP-Reconciliation verwendet nun dieselbe
+`realms_lock` wie Registrierung/Policyänderung; die Suite reproduziert beide
+Aufrufe ausdrücklich parallel. Unveränderte Domänen werden nicht neu gebunden.
+
+Der Rocky-Sicherungstest zeigte außerdem einen tatsächlichen Neustartfehler:
+`podman volume create` ohne `--ignore` scheiterte am bestehenden Datenvolume.
+Das wiederholbare Anlegen wurde korrigiert; das Volume wird weder gelöscht
+noch durch ein neues ersetzt. Der Snapshot-Test prüft nun auch `db.sqlite3`
+im Archiv. Konfiguration setzt vor dem Neustart einen möglichen alten
+systemd-Fehlerzustand zurück.
+
+Stand 34d4f88572b7564cf70d6392423efc30a303afd1: 7 lokale Unit-Tests grün;
+Runtime mit expliziter Kennung `1.37.2-group-prototype` erfolgreich inkrementell
+aus dem bereits kompilierten, gepinnten Quellstand gebaut und Kennung geprüft.
+Erneut alle 10 lokalen Protokolltests grün. Finaler QEMU-Lauf folgt nach der
+Volume-Korrektur. Keine vorzeitige Erfolgsaussage zur gesamten NS8-Matrix.

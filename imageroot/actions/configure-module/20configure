@@ -26,5 +26,6 @@ with agent.exclusive_file_lock('configuration'):
         'host': config['host'], 'http2https': True, 'lets_encrypt': config['lets_encrypt']})
     agent.assert_exp(response['exit_code'] == 0, 'Traefik configuration failed')
     subprocess.run(['systemctl', '--user', 'enable', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+    subprocess.run(['systemctl', '--user', 'reset-failed', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
 json.dump({'configured': True, 'host': config['host']}, sys.stdout)

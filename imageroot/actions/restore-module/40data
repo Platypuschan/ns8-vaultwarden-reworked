@@ -2,5 +2,5 @@
 import subprocess
 from pathlib import Path
 if Path('vaultwarden-data.tar').exists():
-    subprocess.run(['podman','volume','create','vaultwarden-data'],check=True)
+    subprocess.run(['podman','volume','create','--ignore','vaultwarden-data'],check=True)
     subprocess.run(['podman','volume','import','vaultwarden-data','vaultwarden-data.tar'],check=True)

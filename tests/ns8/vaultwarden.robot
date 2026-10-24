@@ -83,10 +83,11 @@ Application cannot change its access policy
     Policy is enforced
 
 Backup snapshot and service restart
-    ${rc} =    Execute Command    runagent -m ${APP} module-dump-state    return_rc=True    return_stdout=False
+    ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} module-dump-state    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${err}
+    ${files}    ${rc} =    Execute Command    runagent -m ${APP} tar tf vaultwarden-data.tar    return_rc=True
     Should Be Equal As Integers    ${rc}    0
-    ${rc} =    Execute Command    runagent -m ${APP} tar tf vaultwarden-data.tar    return_rc=True    return_stdout=False
-    Should Be Equal As Integers    ${rc}    0
+    Should Contain    ${files}    db.sqlite3
     Wait Until Keyword Succeeds    120s    3s    App is healthy
     ${rc} =    Execute Command    runagent -m ${APP} module-cleanup-state    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
