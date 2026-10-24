@@ -15,13 +15,17 @@ jobs:
       - run: python3 tests/check_syntax.py
   protocol:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y podman
       - run: python3 -m pip install requests==2.32.5
       - run: podman build --layers -t localhost/ns8-idp-group-prototype -f prototype/idp/Containerfile prototype/idp
       - run: podman build --layers -t localhost/ns8-vaultwarden-test-samba -f tests/integration/Samba.Containerfile tests/integration
+      - name: Build patched Vaultwarden runtime (reuse matching source/patch cache)
+        run: |
+          base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          .github/scripts/build-runtime localhost/vaultwarden-sso-only "$base/vaultwarden-server:$(.github/scripts/runtime-tag)"
       - run: python3 tests/integration/run.py
       - uses: actions/upload-artifact@v4
         if: always()

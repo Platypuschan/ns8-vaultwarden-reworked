@@ -5,20 +5,20 @@ Description=Vaultwarden (SSO-only prototype)
 Environment=PODMAN_SYSTEMD_UNIT=%n
 EnvironmentFile=%E/state/environment
 WorkingDirectory=%E/state
-Restart=on-failure
+Restart=always
 TimeoutStartSec=120
 TimeoutStopSec=70
 ExecStartPre=/usr/bin/podman volume create vaultwarden-data
 # A preexisting config.json can override the managed SSO-only policy. Fail
 # closed rather than deleting administrator data or silently accepting it.
-ExecStartPre=/usr/bin/podman run --rm --network=none --entrypoint=/bin/sh --volume vaultwarden-data:/data:ro ${SERVER_IMAGE} -ec "test ! -e /data/config.json"
+ExecStartPre=/usr/bin/podman run --rm --network=none --entrypoint=/bin/sh --volume vaultwarden-data:/data:ro ${VAULTWARDEN_SERVER_IMAGE} -ec "test ! -e /data/config.json"
 ExecStartPre=/bin/rm -f %t/vaultwarden.ctr-id
 ExecStart=/usr/bin/podman run --sdnotify=conmon --detach --replace --name=vaultwarden-app \
     --cgroups=no-conmon --cidfile=%t/vaultwarden.ctr-id \
     --publish=127.0.0.1:${TCP_PORT}:80 \
     --volume=vaultwarden-data:/data:Z \
     --env-file=./vaultwarden.env \
-    ${SERVER_IMAGE}
+    ${VAULTWARDEN_SERVER_IMAGE}
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/vaultwarden.ctr-id -t 20
 ExecStopPost=/usr/bin/podman rm --ignore -f --cidfile=%t/vaultwarden.ctr-id
 Type=notify

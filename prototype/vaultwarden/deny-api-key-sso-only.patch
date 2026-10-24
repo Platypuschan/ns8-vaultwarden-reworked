@@ -1,0 +1,10 @@
+--- a/src/api/identity.rs
++++ b/src/api/identity.rs
+@@ -85,6 +85,7 @@
+ 
+             password_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
+         }
++        "client_credentials" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
+         "client_credentials" => {
+             check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
+             check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;

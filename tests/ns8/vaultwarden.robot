@@ -19,26 +19,26 @@ App is healthy
 
 Policy is enforced
     ${policy} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${APP}"}
-    Should Be True    ${policy.enforced}
-    Should Be True    ${policy.enabled}
-    Should Be Equal    ${policy.group_path}    /${GROUP}
+    Should Be True    ${policy['enforced']}
+    Should Be True    ${policy['enabled']}
+    Should Be Equal    ${policy['group_path']}    /${GROUP}
 
 *** Test Cases ***
 Install prototype modules
     ${idp_image} =    Evaluate    $IMAGE_URL.replace('/vaultwarden:', '/idp-vaultwarden-prototype:')
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
-    ${data} =    Evaluate    json.loads($out)    modules=json
-    Set Suite Variable    ${IDP}    ${data.module_id}
+    ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
+    Set Suite Variable    ${IDP}    ${data['module_id']}
     Run task    module/${IDP}/configure-module    {"host":"${IDP_HOST}","lets_encrypt":false}    decode_json=${FALSE}
     ${out}    ${rc} =    Execute Command    add-module ${IMAGE_URL} 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
-    ${data} =    Evaluate    json.loads($out)    modules=json
-    Set Suite Variable    ${APP}    ${data.module_id}
+    ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
+    Set Suite Variable    ${APP}    ${data['module_id']}
 
 Create internal Samba domain
     ${out} =    Run task    cluster/add-internal-provider    {"image":"samba","node":1}
-    Set Suite Variable    ${SAMBA}    ${out.module_id}
+    Set Suite Variable    ${SAMBA}    ${out['module_id']}
     ${defaults} =    Run task    module/${SAMBA}/get-defaults    {"provision":"new-domain"}
     ${ip} =    Set Variable    ${defaults['ipaddress_list'][0]['ipaddress']}
     Run task    module/${SAMBA}/configure-module    {"provision":"new-domain","realm":"${DOMAIN}","nbdomain":"VWTEST","hostname":"dc1","ipaddress":"${ip}","adminuser":"administrator","adminpass":"Nethesis,1234"}    decode_json=${FALSE}
@@ -48,7 +48,7 @@ Create internal Samba domain
 
 Prepare OIDC registration without exposing application
     ${data} =    Run task    module/${APP}/prepare-sso    {"host":"${APP_HOST}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
-    Should Be Equal    ${data.client_id}    ${APP}
+    Should Be Equal    ${data['client_id']}    ${APP}
     ${out}    ${rc} =    Execute Command    api-cli run module/${APP}/configure-module --data '{"host":"${APP_HOST}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}'    return_rc=True
     Should Not Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-active --quiet vaultwarden.service    return_rc=True    return_stdout=False
@@ -68,6 +68,11 @@ Activate application and verify private settings
     Should Be Equal    ${mode.strip()}    600
     ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_ONLY=true' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+    Policy is enforced
+
+Application cannot change its access policy
+    ${rc} =    Execute Command    runagent -m ${APP} api-cli run module/${IDP}/set-client-access --data '{"domain":"${DOMAIN}","client_id":"${APP}","group_path":"/other"}'    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
     Policy is enforced
 
 Backup snapshot and service restart

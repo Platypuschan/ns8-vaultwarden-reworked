@@ -56,6 +56,20 @@ tokens are used without requesting `offline_access` from Keycloak, so ordinary
 realm/client session limits apply; Bitwarden's own `api offline_access` scope
 is a separate protocol layer.
 
+## Additional native Vaultwarden login path
+
+Inspection and a positive runtime control on upstream 1.37.2 showed that
+`SSO_ONLY=true` does not block `client_credentials` with a personal API key.
+A valid existing key still issued a new-device token after group removal.
+There is no configuration switch to disable this grant. The module therefore
+uses a runtime built from upstream commit
+`46d71107f5094460dd5ecbe1dbac6e6c71e5189a` plus the single guarded match arm in
+`prototype/vaultwarden/deny-api-key-sso-only.patch`. In SSO-only mode it refuses
+all `client_credentials` grants before they can register a device. This also
+disables organization API-key login in the prototype. Normal SSO authorization
+and refresh flows remain unchanged. No extra authentication reverse proxy is
+introduced. The patch must be rebased and tested on every upstream upgrade.
+
 ## Boundaries
 
 Group removal blocks new authorizations and token issuance/refresh. Existing

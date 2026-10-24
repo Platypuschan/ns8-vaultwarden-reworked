@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -180,7 +181,7 @@ class LoginTests(unittest.TestCase):
                 'SSO_SCOPES','SSO_PKCE','SIGNUPS_ALLOWED','SSO_SIGNUPS_ALLOWED','SSO_SIGNUPS_MATCH_EMAIL',
                 'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION','ROCKET_PORT','ROCKET_ADDRESS'):
             args += ['--env',key]
-        args += ['--volume',f'vw-data-{cls.suffix}:/data','docker.io/vaultwarden/server:1.37.2']
+        args += ['--volume',f'vw-data-{cls.suffix}:/data',os.environ.get('VW_RUNTIME_IMAGE','localhost/vaultwarden-sso-only')]
         cmd(*args,env=env)
         cls.names.append(cls.vaultwarden)
         wait_http(cls.vw_url+'/alive',cls.names)
@@ -364,6 +365,39 @@ class LoginTests(unittest.TestCase):
             comp['config']=original
             self.kc.put('/ad.test/components/'+comp['id'],comp)
             self.kc.post('/ad.test/clear-user-cache')
+
+    def test_10_valid_api_key_cannot_register_new_device(self):
+        # Ensure a real account exists, then model a previously generated user
+        # API key. Do not confuse rejection of an invalid key with a closed bypass.
+        _,r,target,verifier=self.auth('allowed',mobile=True)
+        self.assertTrue(target and target.startswith('bitwarden://sso-callback'))
+        code=parse_qs(urlsplit(target).query)['code'][0]
+        response=requests.post(self.vw_url+'/identity/connect/token',data={
+            'grant_type':'authorization_code','client_id':'mobile','scope':'api offline_access',
+            'code':code,'code_verifier':verifier,'redirect_uri':'bitwarden://sso-callback',
+            'deviceIdentifier':secrets.token_hex(16),'deviceName':'Prepare API key test','deviceType':'0'},timeout=20)
+        self.assertEqual(response.status_code,200)
+        mount=cmd('podman','volume','inspect','-f','{{.Mountpoint}}',f'vw-data-{self.suffix}').stdout.strip()
+        key=secrets.token_urlsafe(30)
+        with sqlite3.connect(str(Path(mount)/'db.sqlite3')) as db:
+            uid=db.execute('SELECT uuid FROM users WHERE email=?',('allowed@example.test',)).fetchone()[0]
+            db.execute('UPDATE users SET api_key=? WHERE uuid=?',(key,uid))
+        cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','allowed')
+        try:
+            response=requests.post(self.vw_url+'/identity/connect/token',data={
+                'grant_type':'client_credentials','scope':'api','client_id':'user.'+uid,
+                'client_secret':key,'deviceIdentifier':secrets.token_hex(16),
+                'deviceName':'New CLI device after revocation','deviceType':'8'},timeout=20)
+            if os.environ.get('VW_EXPECT_API_KEY_BLOCK','1') == '1':
+                self.assertNotEqual(response.status_code,200)
+                self.assertNotIn('access_token',response.json())
+                self.assertIn('SSO sign-in is required',response.text)
+            else:
+                # Positive control demonstrating the original upstream bypass.
+                self.assertEqual(response.status_code,200)
+                self.assertIn('access_token',response.json())
+        finally:
+            cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
 
 
 if __name__=='__main__':

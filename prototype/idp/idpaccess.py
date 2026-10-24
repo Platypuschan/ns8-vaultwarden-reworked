@@ -115,6 +115,7 @@ def apply(kc, realm, client_id, group_path):
         gate["requirement"] = "REQUIRED"
         kc.put(base + "/authentication/flows/" + q(wrapper_alias) + "/executions", gate)
         attrs[FLOW_ID] = wrapper["id"]
+    attrs["access.token.lifespan"] = "600"
     attrs[GROUP_ID] = group["id"]
     attrs[GROUP_PATH] = group["path"]
     client.setdefault("authenticationFlowBindingOverrides", {})["browser"] = attrs[FLOW_ID]

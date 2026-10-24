@@ -9,6 +9,7 @@ on:
       - 'prototype/**'
       - 'tests/ns8/**'
       - 'test-module*.sh'
+      - '.github/scripts/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,8 +35,12 @@ jobs:
           printf '%s' "$GH_TOKEN" | podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           podman build --layers -t "$base/idp-keycloak:$tag" -f prototype/idp/Containerfile prototype/idp
           podman build --layers -t "$base/idp-vaultwarden-prototype:$tag" --build-arg "KEYCLOAK_IMAGE=$base/idp-keycloak:$tag" -f prototype/idp/Module.Containerfile .
-          podman build --layers -t "$base/vaultwarden:$tag" -f Containerfile .
-          for image in idp-keycloak idp-vaultwarden-prototype vaultwarden; do
+          runtime_tag="$(.github/scripts/runtime-tag)"
+          .github/scripts/build-runtime "$base/vaultwarden-server:$tag" "$base/vaultwarden-server:$runtime_tag"
+          podman tag "$base/vaultwarden-server:$tag" "$base/vaultwarden-server:$runtime_tag"
+          podman push "$base/vaultwarden-server:$runtime_tag"
+          podman build --layers -t "$base/vaultwarden:$tag" --build-arg "VAULTWARDEN_IMAGE=$base/vaultwarden-server:$tag" -f Containerfile .
+          for image in idp-keycloak idp-vaultwarden-prototype vaultwarden-server vaultwarden; do
             podman push "$base/$image:$tag"
           done
           printf 'app=%s/vaultwarden:%s\ntag=%s\n' "$base" "$tag" "$tag" >> "$GITHUB_OUTPUT"
