@@ -1,9 +1,9 @@
 # ns8-idp und Vaultwarden mit Samba-AD-Gruppenfilter
 
 Stand: 24.10.2026. Diese Anleitung beschreibt den **Prototyp dieses Branches**.
-Der unveränderte Upstream-IdP bietet die hier verwendeten Aktionen
-`set-client-access` und `get-client-access` nicht. Nur SSO einzuschalten oder
-AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
+Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
+`alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
+oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
 
 ## Zielkonfiguration
 
@@ -45,6 +45,11 @@ Die QEMU-Pipeline dieses Repositorys baut vier zusammengehörige Images mit
 `prototype-<12-stellige Commit-SHA>`. Den erfolgreich geprüften Lauf aus
 [TESTING.md](TESTING.md) auswählen; **kein unbestimmtes `latest` verwenden**.
 Das Paket ist kein Katalog-/Stable-Release.
+
+Hinweis: Dieser Branch (Required Action statt Client-Flows) hat noch keinen
+veröffentlichten, in QEMU geprüften Tag. Der folgende Tag gehört zum vorherigen
+Stand mit `set-client-access`; für diesen Branch erst nach grünem QEMU-Lauf den
+neuen Tag aus TESTING.md eintragen.
 
 ```bash
 # Auf Debian 13 und Rocky 9 / Core 3.23.2 geprüfter Stand, siehe TESTING.md.
@@ -131,32 +136,62 @@ deren `mail`-Attribut prüfen. Der Pfad bezeichnet die von Keycloak importierte
 AD-Gruppe, keine Vaultwarden-Organisation und keinen OIDC-Scope.
 
 ```bash
-api-cli run module/idp-vaultwarden-prototype1/set-client-access --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden1","group_path":"/services_vaultwarden"}'
+api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden1","access_group":"services_vaultwarden"}'
 
 api-cli run module/idp-vaultwarden-prototype1/get-client-access --data \
   '{"domain":"ad.example.com","client_id":"vaultwarden1"}'
 ```
 
-Erwartet werden `enforced:true`, `enabled:true` und
-`group_path:"/services_vaultwarden"`. Die Aktion synchronisiert Gruppenobjekte,
-legt den separaten Anmeldeflow an und installiert die Tokenprüfung.
-Sie ändert nicht den Standard-Browserflow des Realms. Für aktuelle
-Mitgliedschaften wird der LDAP-Benutzercache auf `NO_CACHE` gestellt; das kann
-mehr LDAP-Anfragen auch für andere Anwendungen dieses Realms verursachen.
+Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
+`group_path:"/services_vaultwarden"`. `list-realms` zeigt die Gruppe zusätzlich
+als `access_group` des Clients. Die Aktion importiert die Gruppenobjekte,
+aktiviert im Realm die Required Action `ns8-client-access` und hängt die
+Tokenprüfung an den Client.
+
+Was sich gegenüber dem ersten Prototyp geändert hat:
+
+- Kein eigener Anmeldeflow pro Client. Keycloak wertet die Required Action nach
+  jeder Anmeldung aus: Passwort, vorhandene SSO-Sitzung und Anmeldung über einen
+  federierten IdP (z. B. Entra ID). Login-Modus `federated`, Passwortsperre
+  federierter Konten und spätere MFA-Änderungen am Realm-Flow gelten damit
+  automatisch auch für Vaultwarden.
+- Der LDAP-Benutzercache bleibt eingeschaltet. Die Prüfung entfernt nur den
+  anmeldenden Benutzer aus dem Cache und liest seine Gruppen live aus LDAP.
+- Auch eine schreibbare Federation (Realm mit federiertem IdP) wird
+  unterstützt; Voraussetzung ist nur der read-only Gruppenmapper von ns8-idp.
+- Clients ohne Gruppenregel sind unverändert.
+
+Regel wieder entfernen (die Tokenprüfung wird mit entfernt):
+
+```bash
+api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden1","access_group":null}'
+```
+
+Wird die AD-Gruppe umbenannt oder gelöscht, kann sich niemand mehr anmelden;
+`get-client-access` meldet dann `group_not_found`. Regel mit dem neuen Namen
+erneut setzen. Nach dem Entfernen des Vaultwarden-Moduls löscht der IdP den
+Client samt Regel. Eine Neuinstallation mit gleicher Modul-ID braucht die Regel
+erneut, Vaultwarden startet vorher nicht.
 
 Schlägt das Setzen teilweise fehl, bleibt der Client absichtlich deaktiviert.
-Ursache beheben und Policy erneut prüfen; nicht einfach ohne gültige Policy
+Ursache beheben und Regel erneut setzen; nicht einfach ohne gültige Regel
 aktivieren. Nach erfolgreicher Reparatur lässt sich der Client administrativ
-mit der vorhandenen Upstream-Aktion wieder aktivieren:
+wieder aktivieren:
 
 ```bash
 api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
   '{"domain":"ad.example.com","client_id":"vaultwarden1","enabled":true}'
 ```
 
+Der IdP stellt beim Start und bei Domänenereignissen fehlende Teile einer Regel
+wieder her (Tokenprüfung, aktivierte Required Action) und übernimmt Regeln des
+ersten Prototyps; dessen Client-Flows werden dabei entfernt.
+
 Keine Änderung an `ns8-agent`, dessen Secret oder den AD-Servicekonten nötig.
-Die Anwendung hat keine Berechtigung, `set-client-access` selbst aufzurufen.
+Die Anwendung hat keine Berechtigung, `alter-realm-client` aufzurufen; sie kann
+nur ihre eigene Regel mit `get-client-access` lesen.
 
 ## 6. Vaultwarden aktivieren
 
@@ -210,12 +245,13 @@ wird nicht pauschal in Vaultwarden freigeschaltet. Benutzer dürfen die
 zugeordneten `mail`-Werte nicht selbst beliebig ändern können.
 
 Für diesen Client eine Access-Token-Laufzeit von mindestens 10 Minuten
-verwenden (Vaultwarden-Upstream-Empfehlung für Keycloak). Die Beispielintegration
-setzt 600 Sekunden. Die Policy setzt dies auch pro Client automatisch. Die
-SSO-/Client-Sitzungslaufzeiten des Realms bestimmen die reguläre erneute
-Anmeldung. Den Standardflow nachträglich geänderte MFA-Schritte zusätzlich in
-den kopierten Clientflow übernehmen; der Prototyp repariert solche Änderungen
-nicht automatisch.
+verwenden (Vaultwarden-Upstream-Empfehlung für Keycloak). Das Vaultwarden-Modul
+fordert bei der Registrierung über den optionalen `register-client`-Parameter
+`access_token_lifespan` 600 Sekunden an; andere Clients behalten den
+Realm-Standard. Nach einem Gruppenentzug laufen bestehende Vaultwarden-Sitzungen
+höchstens bis zum Ablauf dieses Tokens weiter, die Erneuerung wird abgelehnt.
+Die SSO-/Client-Sitzungslaufzeiten des Realms bestimmen die reguläre erneute
+Anmeldung.
 
 ## 7. Android einrichten und Zugriff prüfen
 

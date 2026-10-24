@@ -1,0 +1,146 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "list-realms output",
+    "$id": "http://schema.nethserver.org/idp/list-realms-output.json",
+    "description": "Realms of the idp, with the clients of NS8 modules",
+    "examples": [
+        {
+            "realms": [
+                {
+                    "name": "dp.example.org",
+                    "enabled": true,
+                    "issuer": "https://sso.example.org/realms/dp.example.org",
+                    "user_domain_found": true,
+                    "clients": [
+                        {
+                            "client_id": "nextcloud1",
+                            "enabled": true
+                        }
+                    ],
+                    "user_domain_access": "writable",
+                    "federated_idps": [
+                        {
+                            "alias": "entra",
+                            "type": "entra",
+                            "display_name": "Microsoft Entra ID",
+                            "enabled": true,
+                            "redirect_uri": "https://sso.example.org/realms/dp.example.org/broker/entra/endpoint"
+                        }
+                    ],
+                    "login_mode": "mixed"
+                }
+            ]
+        }
+    ],
+    "type": "object",
+    "required": [
+        "realms"
+    ],
+    "properties": {
+        "realms": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "enabled",
+                    "issuer",
+                    "user_domain_found",
+                    "clients",
+                    "user_domain_access",
+                    "federated_idps",
+                    "login_mode"
+                ],
+                "properties": {
+                    "name": {
+                        "description": "Realm name, which is also the user domain name",
+                        "type": "string"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "issuer": {
+                        "description": "OIDC issuer URL",
+                        "type": "string"
+                    },
+                    "user_domain_found": {
+                        "description": "False if the user domain of the realm was removed from the cluster",
+                        "type": "boolean"
+                    },
+                    "clients": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "client_id",
+                                "enabled"
+                            ],
+                            "properties": {
+                                "client_id": {
+                                    "description": "Module ID, owner of the client",
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "access_group": {
+                                    "description": "LDAP group whose members can sign in to the client, or null if the client is not restricted. The group is null also if the restriction refers to a removed group: then nobody can sign in",
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "user_domain_access": {
+                        "description": "writable if the realm creates the accounts of federated users",
+                        "type": "string",
+                        "enum": [
+                            "read-only",
+                            "writable"
+                        ]
+                    },
+                    "federated_idps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "alias",
+                                "type",
+                                "display_name",
+                                "enabled",
+                                "redirect_uri"
+                            ],
+                            "properties": {
+                                "alias": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "display_name": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "redirect_uri": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "login_mode": {
+                        "description": "federated if the realm accepts only federated IdP logins",
+                        "type": "string",
+                        "enum": [
+                            "mixed",
+                            "federated"
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

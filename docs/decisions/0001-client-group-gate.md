@@ -1,5 +1,8 @@
 # 0001: Enforce the application access group in the IdP
 
+Status update 2026-10-24: flows, cache, token lifespan and administration are
+superseded by [0002](0002-required-action-group-gate.md).
+
 Date: 2026-10-24. Status: prototype implementation.
 User requirement: only direct members of `services_vaultwarden` may log in to
 Vaultwarden, including on a new device; local access to an already downloaded

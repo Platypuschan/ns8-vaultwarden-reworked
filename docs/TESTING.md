@@ -1,5 +1,47 @@
 # Testumgebung und Prüfnachweise
 
+## Stand des Branches claude/idp-upstream-integration (24.10.2026)
+
+Umbau nach [ADR 0002](decisions/0002-required-action-group-gate.md). **Nur lokal
+geprüft**; CI und NS8-QEMU für diesen Stand stehen aus, es gibt noch keine
+veröffentlichten Images. Die Abschnitte darunter beschreiben den vorherigen,
+in QEMU geprüften Stand `prototype-89a52bc0f978`.
+
+| Prüfung | Ergebnis |
+|---|---|
+| Unit-Tests (Konfiguration, Registrierung mit `access_token_lifespan`) | 7 grün |
+| Python-, JSON-, Shellsyntax | grün |
+| Protokolltests Samba-AD + Keycloak 26.7.4 + gepatchter Vaultwarden | 16 grün (62 s) |
+| Gegenprobe ohne Cache-Evict (Tests 04, 09) | rot wie erwartet: Wiederaufnahme in die Gruppe wird wegen des Benutzercaches nicht erkannt |
+| Gegenprobe ohne Required Action (Tests 01, 04, 11) | rot wie erwartet: Nichtmitglieder erhalten per Passwort, SSO-Cookie, neuem Gerät und externem IdP einen Autorisierungscode |
+
+Neue bzw. geänderte Protokolltests:
+
+- 01: Realm-Browserflow unverändert, kein Flow-Override am Client, LDAP-Cache bleibt `DEFAULT`.
+- 09: Gruppenentzug und Wiederaufnahme wirken bei vorgewärmtem Cache sofort.
+- 11: schreibbare Federation und externer OIDC-IdP (zweiter Keycloak-Realm statt
+  Entra ID), eingerichtet mit den unveränderten Upstream-Funktionen aus `idpfed.py`
+  (Mapper, Flows, Passwortsperre, Login-Modi). Erstanmeldung legt das Konto im AD
+  an und wird abgewiesen, gleiche SSO-Sitzung bei anderem Client erlaubt,
+  Gruppenaufnahme erlaubt, Modus `federated` leitet direkt zum IdP und prüft
+  die Gruppe, Entzug sperrt wieder.
+- 12: `access_token_lifespan` optional: 600 s für Vaultwarden (auch im Token
+  `expires_in`), Realm-Standard für andere Clients, Registrierung ohne Parameter
+  behält den Wert, `null` setzt zurück.
+- 13: Regel entfernen (Attribute und Tokenprüfung weg) und neu setzen; unbekannte
+  Gruppe wird abgewiesen, der Client bleibt dabei unverändert.
+- 14: Migration einer Regel des ersten Prototyps (eigener Flow, alte Attribute);
+  Flows werden entfernt, `browser` bleibt erhalten.
+- 15: Reconciliation stellt fehlende Tokenprüfung und deaktivierte Required Action wieder her.
+- 16: Client gelöscht und mit gleicher ID neu registriert: ohne Regel nicht
+  durchgesetzt, Regel setzbar, Zugriff wieder getrennt.
+
+Lokale Umgebung: rootless Podman in LXC; das Samba-Testimage wurde dort mit
+`apt-get -o APT::Sandbox::User=root` gebaut, weil die Gruppen-ID 65534 im
+Namensraum fehlt. Im Repository ist das Containerfile unverändert.
+
+## Vorheriger Stand
+
 Stand: 24.10.2026. Alle Tests liefen isoliert; keine produktive Instanz wurde
 installiert oder verändert. Der geprüfte Modulcode ist
 [`89a52bc0f9785514666c4aed16bbcb0187307a49`](https://github.com/Platypuschan/ns8-vaultwarden/commit/89a52bc0f9785514666c4aed16bbcb0187307a49).

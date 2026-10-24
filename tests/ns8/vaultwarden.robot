@@ -22,6 +22,7 @@ Policy is enforced
     Should Be True    ${policy['enforced']}
     Should Be True    ${policy['enabled']}
     Should Be Equal    ${policy['group_path']}    /${GROUP}
+    Should Be Empty    ${policy['issues']}
 
 *** Test Cases ***
 Install prototype modules
@@ -58,8 +59,11 @@ Apply administrator group policy
     # Import group objects once; login membership is queried live through LDAP.
     ${rc} =    Execute Command    runagent -m ${IDP} python3 -c 'import kcadmin; k=kcadmin.agent_client(); r="${DOMAIN}"; s=k.get("/"+r+"/components",params={"type":"org.keycloak.storage.UserStorageProvider"})[0]; [k.post("/"+r+"/user-storage/"+s["id"]+"/mappers/"+m["id"]+"/sync?direction=fedToKeycloak") for m in k.get("/"+r+"/components",params={"parent":s["id"]}) if m["providerId"]=="group-ldap-mapper"]'    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    Run task    module/${IDP}/set-client-access    {"domain":"${DOMAIN}","client_id":"${APP}","group_path":"/${GROUP}"}
+    Run task    module/${IDP}/alter-realm-client    {"domain":"${DOMAIN}","client_id":"${APP}","access_group":"${GROUP}"}    decode_json=${FALSE}
     Policy is enforced
+    ${realms} =    Run task    module/${IDP}/list-realms    {}
+    ${clients} =    Evaluate    [c for r in $realms['realms'] if r['name'] == $DOMAIN for c in r['clients'] if c['client_id'] == $APP]
+    Should Be Equal    ${clients[0]['access_group']}    ${GROUP}
 
 Activate application and verify private settings
     Run task    module/${APP}/configure-module    {"host":"${APP_HOST}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
@@ -78,7 +82,7 @@ Concurrent IdP reconciliation and reconfiguration
     Wait Until Keyword Succeeds    120s    3s    App is healthy
 
 Application cannot change its access policy
-    ${rc} =    Execute Command    runagent -m ${APP} api-cli run module/${IDP}/set-client-access --data '{"domain":"${DOMAIN}","client_id":"${APP}","group_path":"/other"}'    return_rc=True    return_stdout=False
+    ${rc} =    Execute Command    runagent -m ${APP} api-cli run module/${IDP}/alter-realm-client --data '{"domain":"${DOMAIN}","client_id":"${APP}","access_group":null}'    return_rc=True    return_stdout=False
     Should Not Be Equal As Integers    ${rc}    0
     Policy is enforced
 

@@ -21,6 +21,10 @@ def prepare(config):
         'domain': config['domain'],
         'redirect_uris': ['https://' + config['host'] + '/identity/connect/oidc-signin'],
         'post_logout_redirect_uris': ['https://' + config['host'] + '/'],
+        # Vaultwarden takes the session expiry from the IdP access token;
+        # Bitwarden clients refresh 5 minutes before expiry, so a shorter
+        # lifespan than 10 minutes makes them refresh on every request
+        'access_token_lifespan': 600,
     })
     env = policy.environment(config, registration)
     policy.private_write('vaultwarden.env', env)

@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.nethserver.keycloak</groupId>
-  <artifactId>ns8-client-group-gate</artifactId>
+  <artifactId>ns8-client-access</artifactId>
   <version>0.1.0</version>
   <packaging>jar</packaging>
 
@@ -35,6 +35,12 @@
     </dependency>
     <dependency>
       <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-model-storage</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
       <artifactId>keycloak-services</artifactId>
       <version>${keycloak.version}</version>
       <scope>provided</scope>
@@ -60,6 +66,6 @@
   </dependencies>
 
   <build>
-    <finalName>ns8-client-group-gate</finalName>
+    <finalName>ns8-client-access</finalName>
   </build>
 </project>

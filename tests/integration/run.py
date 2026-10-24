@@ -19,21 +19,44 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import requests
+import types
 
 ROOT = Path(__file__).resolve().parents[2]
+# The NS8 agent libraries are not needed by the Keycloak functions used
+# here: stub them to load the module code unchanged.
+for name in ('agent', 'agent.ldapproxy', 'agent.tasks', 'cluster', 'cluster.userdomains', 'kcadmin'):
+    sys.modules.setdefault(name, types.ModuleType(name))
+sys.path.insert(0, str(ROOT / 'prototype/idp/overlay/pypkg'))
 sys.path.insert(0, str(ROOT / 'prototype/idp'))
+sys.path.insert(0, str(ROOT / 'tests/integration/upstream'))
 import idpaccess
+import idpfed
+import idprealm
 
 
 class Form(HTMLParser):
+    """Forms, with their hidden and prefilled inputs, and links of a page."""
     def __init__(self, html):
         super().__init__()
         self.action = None
+        self.forms = {}
+        self.links = []
+        self._form = None
         self.feed(html)
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if tag == 'form' and attrs.get('id') == 'kc-form-login':
-            self.action = attrs['action']
+        if tag == 'form':
+            self._form = {'action': attrs.get('action'), 'inputs': {}}
+            self.forms[attrs.get('id') or ''] = self._form
+            if attrs.get('id') == 'kc-form-login':
+                self.action = attrs['action']
+        elif tag == 'input' and self._form is not None and attrs.get('name'):
+            self._form['inputs'][attrs['name']] = attrs.get('value') or ''
+        elif tag == 'a' and attrs.get('href'):
+            self.links.append(attrs['href'])
+    def handle_endtag(self, tag):
+        if tag == 'form':
+            self._form = None
 
 
 def cmd(*args, check=True, **kwargs):
@@ -121,7 +144,7 @@ class LoginTests(unittest.TestCase):
         cls.kc = Admin(cls.url, cls.password)
         cls.realm = 'ad.test'
         cls.kc.post('', {'realm': cls.realm, 'enabled': True, 'sslRequired': 'none',
-            'registrationAllowed': False, 'accessTokenLifespan': 600})
+            'registrationAllowed': False})
         rid = cls.kc.get('/ad.test')['id']
         # Same read-only AD LDAP schema and group mapper as ns8-idp, using the
         # private test network in place of the NS8 ldapproxy.
@@ -159,14 +182,14 @@ class LoginTests(unittest.TestCase):
             except RuntimeError:
                 if time.monotonic()>end: raise
                 time.sleep(2)
-        cls.secret = secrets.token_urlsafe(32)
-        for cid in ('vaultwarden1','other1'):
-            cls.kc.post('/ad.test/clients', {'clientId':cid,'protocol':'openid-connect',
-                'enabled':True,'publicClient':False,'secret':cls.secret,
-                'standardFlowEnabled':True,'directAccessGrantsEnabled':False,
-                'redirectUris':[cls.vw_url+'/identity/connect/oidc-signin'],
-                'attributes':{'ns8.module_id':cid}, 'defaultClientScopes':['profile','email']})
-        cls.policy = idpaccess.apply(cls.kc, 'ad.test', 'vaultwarden1', '/services_vaultwarden')
+        # Registration as by the register-client action, with the access token
+        # lifespan requested by the Vaultwarden module
+        redirect=[cls.vw_url+'/identity/connect/oidc-signin']
+        cls.secret = idprealm.ensure_client(cls.kc, 'ad.test', 'vaultwarden1', redirect_uris=redirect,
+            access_token_lifespan=600)
+        idprealm.ensure_client(cls.kc, 'ad.test', 'other1', redirect_uris=redirect)
+        cls.policy = idpaccess.set_policy(cls.kc, 'ad.test', cls.kc.find_client('ad.test','vaultwarden1'),
+            'services_vaultwarden')
         env = dict(os.environ, DOMAIN=cls.vw_url, SSO_ENABLED='true', SSO_ONLY='true',
             SSO_AUTHORITY=cls.url+'/realms/ad.test', SSO_CLIENT_ID='vaultwarden1',
             SSO_CLIENT_SECRET=cls.secret, SSO_SCOPES='profile email', SSO_PKCE='true',
@@ -237,7 +260,13 @@ class LoginTests(unittest.TestCase):
         self.fail('Redirect loop')
 
     def test_01_allowed_and_denied(self):
-        self.assertTrue(self.policy['enforced'])
+        self.assertTrue(self.policy['enforced'], self.policy)
+        # No private flow, no realm flow change, no cache change
+        client=self.kc.find_client('ad.test','vaultwarden1')
+        self.assertFalse(any((client.get('authenticationFlowBindingOverrides') or {}).values()))
+        self.assertEqual(self.kc.get('/ad.test')['browserFlow'],'browser')
+        comp=self.kc.get('/ad.test/components/'+self.component['id'])
+        self.assertEqual(comp['config']['cachePolicy'],['DEFAULT'])
         for username,expected in [('allowed',True),('denied',False)]:
             with self.subTest(username=username):
                 _,r,target,_=self.auth(username)
@@ -287,7 +316,7 @@ class LoginTests(unittest.TestCase):
     def test_05_missing_policy_denies(self):
         client=self.kc.find_client('ad.test','vaultwarden1')
         attrs=dict(client['attributes'])
-        client['attributes'][idpaccess.GROUP_ID] = ''
+        client['attributes'][idpaccess.GROUP_ID] = 'missing-group'
         self.kc.put('/ad.test/clients/'+client['id'],client)
         try:
             _,r,target,_=self.auth('allowed')
@@ -298,7 +327,7 @@ class LoginTests(unittest.TestCase):
             self.kc.put('/ad.test/clients/'+client['id'],client)
 
     def test_06_policy_idempotent_and_restart_persistent(self):
-        state=idpaccess.apply(self.kc,'ad.test','vaultwarden1','/services_vaultwarden')
+        state=idpaccess.set_policy(self.kc,'ad.test',self.kc.find_client('ad.test','vaultwarden1'),'services_vaultwarden')
         self.assertTrue(state['enforced'])
         cmd('podman','restart',self.keycloak)
         wait_http(self.url+'/realms/ad.test/.well-known/openid-configuration',self.names)
@@ -355,21 +384,30 @@ class LoginTests(unittest.TestCase):
         finally:
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
 
-    def test_09_unsafe_ldap_cache_denies(self):
+    def test_09_cached_user_revocation_and_regrant(self):
+        # The LDAP cache stays enabled: warm it with a login to another client,
+        # then check that membership changes apply to the next login at once.
         comp=self.kc.get('/ad.test/components/'+self.component['id'])
-        original=dict(comp['config'])
-        comp['config']['cachePolicy']=['DEFAULT']
-        self.kc.put('/ad.test/components/'+comp['id'],comp)
+        self.assertEqual(comp['config']['cachePolicy'],['DEFAULT'])
+        session,_,target,_=self.auth('allowed',client='other1')
+        self.assertIn('code=',target or '')
+        cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','allowed')
         try:
-            _,r,target,_=self.auth('allowed')
+            _,r,target,_=self.auth('allowed',session=session,require_cookie=True)
             self.assertIsNone(target)
             self.assertEqual(r.status_code,403)
-            client=self.kc.find_client('ad.test','vaultwarden1')
-            self.assertFalse(idpaccess.access_state(self.kc,'ad.test',client)['enforced'])
         finally:
-            comp['config']=original
-            self.kc.put('/ad.test/components/'+comp['id'],comp)
-            self.kc.post('/ad.test/clear-user-cache')
+            cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
+        _,_,target,_=self.auth('allowed',session=session,require_cookie=True)
+        self.assertIn('code=',target or '')
+        cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','denied')
+        try:
+            _,_,target,_=self.auth('denied')
+            self.assertIn('code=',target or '')
+        finally:
+            cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','denied')
+        _,r,target,_=self.auth('denied')
+        self.assertIsNone(target)
 
     def test_10_valid_api_key_cannot_register_new_device(self):
         # Ensure a real account exists, then model a previously generated user
@@ -403,6 +441,244 @@ class LoginTests(unittest.TestCase):
                 self.assertIn('access_token',response.json())
         finally:
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
+
+    def broker_auth(self, password, session=None, client='vaultwarden1', federated=False):
+        """Sign in through the external IdP. Return (session, last response,
+        callback URL or None, visited URLs)."""
+        s=session or requests.Session()
+        url=self.url+'/realms/ad.test/protocol/openid-connect/auth?'+urlencode({
+            'client_id':client,'redirect_uri':self.vw_url+'/identity/connect/oidc-signin',
+            'response_type':'code','scope':'openid profile email','state':secrets.token_urlsafe(24)})
+        r=s.get(url,allow_redirects=False,timeout=20)
+        visited=[url]
+        for _ in range(30):
+            for cookie in s.cookies:
+                if cookie.domain == '127.0.0.1': cookie.secure = False
+            if r.is_redirect:
+                target=urljoin(r.url,r.headers['Location'])
+                visited.append(target)
+                if target.startswith(self.vw_url):
+                    return s,r,target,visited
+                r=s.get(target,allow_redirects=False,timeout=20)
+                continue
+            page=Form(r.text)
+            if '/realms/ext/' in r.url and page.action:
+                r=s.post(page.action,data={'username':'fedx','password':password},allow_redirects=False,timeout=20)
+                continue
+            if '/realms/ad.test/' in r.url and page.action:
+                if federated:
+                    self.fail('The password form of the realm is shown in federated login mode')
+                link=next(l for l in page.links if '/broker/ext/' in l)
+                r=s.get(urljoin(r.url,link.replace('&amp;','&')),allow_redirects=False,timeout=20)
+                continue
+            form=next((f for i,f in page.forms.items() if 'profile' in i or 'update' in i),None)
+            if form:
+                # First broker login: review the profile received from the IdP
+                r=s.post(urljoin(r.url,form['action']),data=form['inputs'],allow_redirects=False,timeout=20)
+                continue
+            return s,r,None,visited
+        self.fail('Redirect loop')
+
+    def test_11_writable_federation_and_federated_idp(self):
+        """Realm with a federated IdP, configured with the unchanged upstream
+        functions: writable LDAP federation, NS8 flows, password denial and
+        both login modes. A second realm of the same Keycloak stands in for
+        Microsoft Entra ID."""
+        kc=self.kc
+        comp=kc.get('/ad.test/components/'+self.component['id'])
+        original=dict(comp['config'])
+        comp['config'].update({'editMode':['WRITABLE'],'syncRegistrations':['true']})
+        kc.put('/ad.test/components/'+comp['id'],comp)
+        ext_password=secrets.token_urlsafe(18)+'Aa1!'
+        kc.post('',{'realm':'ext','enabled':True,'sslRequired':'none'})
+        ext_secret=secrets.token_urlsafe(32)
+        kc.post('/ext/clients',{'clientId':'ad-broker','protocol':'openid-connect','publicClient':False,
+            'secret':ext_secret,'standardFlowEnabled':True,
+            'redirectUris':[self.url+'/realms/ad.test/broker/ext/endpoint']})
+        kc.post('/ext/users',{'username':'fedx','enabled':True,'email':'fedx@example.test','emailVerified':True,
+            'firstName':'Fed','lastName':'User','credentials':[{'type':'password','value':ext_password,'temporary':False}]})
+        try:
+            idpfed.ensure_writable_mappers(kc,'ad.test',comp['id'])
+            idpfed.ensure_user_profile(kc,'ad.test')
+            idpfed.ensure_flows(kc,'ad.test')
+            idpfed.ensure_password_denial(kc,'ad.test','ext','External')
+            # Keycloak calls the token endpoint from its own container
+            internal='http://127.0.0.1:8080/realms/ext/protocol/openid-connect'
+            rep=idpfed.entra_idp_rep('ext','External',{'tenant_id':'x','client_id':'ad-broker','client_secret':ext_secret})
+            rep['config'].update({'issuer':self.url+'/realms/ext',
+                'authorizationUrl':self.url+'/realms/ext/protocol/openid-connect/auth',
+                'tokenUrl':internal+'/token','jwksUrl':internal+'/certs',
+                'logoutUrl':self.url+'/realms/ext/protocol/openid-connect/logout'})
+            kc.post('/ad.test/identity-provider/instances',rep)
+            for mapper in idpfed.entra_idp_mappers('ext'):
+                if mapper['name']=='idp id':
+                    mapper['config']['claim']='sub'
+                kc.post('/ad.test/identity-provider/instances/ext/mappers',mapper)
+            # The policy is still complete with the writable federation
+            state=idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))
+            self.assertTrue(state['enforced'],state)
+            with self.subTest('native accounts with the writable federation'):
+                _,_,target,_=self.auth('allowed')
+                self.assertIn('code=',target or '')
+                _,r,target,_=self.auth('denied')
+                self.assertIsNone(target)
+                self.assertEqual(r.status_code,403)
+            with self.subTest('first federated login creates the account and is denied'):
+                session,r,target,_=self.broker_auth(ext_password)
+                self.assertIsNone(target,'federated non-member got an authorization code')
+                self.assertEqual(r.status_code,403,r.text[-500:])
+                out=cmd('podman','exec',self.samba,'samba-tool','user','show','fedx').stdout
+                self.assertIn('employeeType: ext',out)
+            with self.subTest('same SSO session, unrestricted client'):
+                _,r,target,_=self.broker_auth(ext_password,session=session,client='other1')
+                self.assertIn('code=',target or '',r.text[-500:])
+            cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','fedx')
+            with self.subTest('member after group change, existing SSO session'):
+                _,r,target,_=self.broker_auth(ext_password,session=session)
+                self.assertIn('code=',target or '',r.text[-500:])
+            with self.subTest('federated login mode applies to the restricted client'):
+                idpfed.apply_login_mode(kc,'ad.test','federated')
+                try:
+                    _,r,target,visited=self.broker_auth(ext_password,federated=True)
+                    self.assertTrue(any('/realms/ext/' in u for u in visited))
+                    self.assertIn('code=',target or '',r.text[-500:])
+                finally:
+                    idpfed.apply_login_mode(kc,'ad.test','mixed')
+            cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','fedx')
+            with self.subTest('fresh federated login after removal'):
+                _,r,target,_=self.broker_auth(ext_password)
+                self.assertIsNone(target)
+                self.assertEqual(r.status_code,403)
+        finally:
+            for idp in kc.get('/ad.test/identity-provider/instances'):
+                idpfed.remove_password_denial(kc,'ad.test',idp['alias'])
+                kc.delete('/ad.test/identity-provider/instances/'+idp['alias'])
+            idpfed.reset_flows(kc,'ad.test')
+            idpfed.ensure_read_only_mappers(kc,'ad.test',comp['id'])
+            comp=kc.get('/ad.test/components/'+comp['id'])
+            comp['config'].update({'editMode':original['editMode'],'syncRegistrations':original['syncRegistrations']})
+            kc.put('/ad.test/components/'+comp['id'],comp)
+            kc.delete('/ext')
+        _,_,target,_=self.auth('allowed')
+        self.assertIn('code=',target or '')
+
+    def test_12_access_token_lifespan_is_optional(self):
+        kc=self.kc
+        lifespan=lambda cid: (kc.find_client('ad.test',cid).get('attributes') or {}).get('access.token.lifespan') or None
+        self.assertEqual(lifespan('vaultwarden1'),'600')
+        self.assertIsNone(lifespan('other1'))
+        redirect=[self.vw_url+'/identity/connect/oidc-signin']
+        # A registration without the setting keeps it
+        idprealm.ensure_client(kc,'ad.test','vaultwarden1',redirect_uris=redirect)
+        self.assertEqual(lifespan('vaultwarden1'),'600')
+        _,_,target,verifier=self.auth('allowed')
+        token=requests.post(self.url+'/realms/ad.test/protocol/openid-connect/token',data={
+            'grant_type':'authorization_code','client_id':'vaultwarden1','client_secret':self.secret,
+            'code':parse_qs(urlsplit(target).query)['code'][0],
+            'redirect_uri':self.vw_url+'/identity/connect/oidc-signin','code_verifier':verifier},timeout=20).json()
+        self.assertEqual(token['expires_in'],600)
+        # None restores the realm default
+        idprealm.ensure_client(kc,'ad.test','vaultwarden1',redirect_uris=redirect,access_token_lifespan=None)
+        self.assertIsNone(lifespan('vaultwarden1'))
+        idprealm.ensure_client(kc,'ad.test','vaultwarden1',redirect_uris=redirect,access_token_lifespan=600)
+        self.assertEqual(lifespan('vaultwarden1'),'600')
+        # Registrations keep the policy
+        self.assertTrue(idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))['enforced'])
+
+    def test_13_policy_removal_and_new_policy(self):
+        kc=self.kc
+        idpaccess.clear_policy(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))
+        try:
+            client=kc.find_client('ad.test','vaultwarden1')
+            self.assertFalse(idpaccess.restricted(client))
+            self.assertFalse(any(m.get('protocolMapper')==idpaccess.TOKEN_GATE
+                for m in kc.get('/ad.test/clients/'+client['id']+'/protocol-mappers/models')))
+            self.assertFalse(any(k.startswith('ns8.access') for k in client.get('attributes',{})))
+            _,_,target,_=self.auth('denied')
+            self.assertIn('code=',target or '')
+        finally:
+            state=idpaccess.set_policy(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'),'services_vaultwarden')
+        self.assertTrue(state['enforced'])
+        _,r,target,_=self.auth('denied')
+        self.assertIsNone(target)
+        with self.assertRaises(idpaccess.PolicyError) as ctx:
+            idpaccess.set_policy(kc,'ad.test',kc.find_client('ad.test','other1'),'no_such_group')
+        self.assertEqual(ctx.exception.code,'group_not_found')
+        self.assertFalse(idpaccess.restricted(kc.find_client('ad.test','other1')))
+        self.assertTrue(kc.find_client('ad.test','other1')['enabled'])
+
+    def test_14_prototype_policy_is_migrated(self):
+        """A client restricted by the first prototype: private copy of the
+        browser flow bound to the client, legacy attributes."""
+        kc=self.kc
+        group=kc.get('/ad.test/group-by-path/services_vaultwarden')
+        idprealm.ensure_client(kc,'ad.test','legacy1',redirect_uris=[self.vw_url+'/identity/connect/oidc-signin'])
+        legacy=kc.find_client('ad.test','legacy1')
+        kc.post('/ad.test/authentication/flows/browser/copy',{'newName':'ns8-group-0123456789abcdef-login'})
+        kc.post('/ad.test/authentication/flows',{'alias':'ns8-group-0123456789abcdef','providerId':'basic-flow','topLevel':True,'builtIn':False})
+        flows={f['alias']:f for f in kc.get('/ad.test/authentication/flows')}
+        kc.post('/ad.test/authentication/executions',{'parentFlow':flows['ns8-group-0123456789abcdef']['id'],
+            'flowId':flows['ns8-group-0123456789abcdef-login']['id'],'authenticatorFlow':True,'requirement':'REQUIRED'})
+        legacy['attributes'].update({idpaccess.LEGACY_GROUP_ID:group['id'],idpaccess.LEGACY_GROUP_PATH:group['path'],
+            idpaccess.LEGACY_FLOW_ID:flows['ns8-group-0123456789abcdef']['id']})
+        legacy['authenticationFlowBindingOverrides']={'browser':flows['ns8-group-0123456789abcdef']['id']}
+        kc.put('/ad.test/clients/'+legacy['id'],legacy)
+        kc.post('/ad.test/clients/'+legacy['id']+'/protocol-mappers/models',{'name':'ns8-required-group',
+            'protocol':'openid-connect','protocolMapper':idpaccess.TOKEN_GATE,'config':{}})
+        try:
+            idpaccess.reconcile(kc,'ad.test',idprealm.module_clients(kc,'ad.test'))
+            legacy=kc.find_client('ad.test','legacy1')
+            state=idpaccess.access_state(kc,'ad.test',legacy)
+            self.assertTrue(state['enforced'],state)
+            self.assertEqual(state['group'],'services_vaultwarden')
+            self.assertFalse(any(k.startswith('ns8.required') or k=='ns8.group_gate_flow_id' for k in legacy['attributes']))
+            aliases={f['alias'] for f in kc.get('/ad.test/authentication/flows')}
+            self.assertFalse(any(a.startswith('ns8-group-') for a in aliases),aliases)
+            self.assertIn('browser',aliases)
+            _,r,target,_=self.auth('denied',client='legacy1')
+            self.assertIsNone(target)
+            self.assertEqual(r.status_code,403)
+            _,_,target,_=self.auth('allowed',client='legacy1')
+            self.assertIn('code=',target or '')
+            # A second run changes nothing
+            idpaccess.reconcile(kc,'ad.test',idprealm.module_clients(kc,'ad.test'))
+            self.assertEqual(len(idpaccess._token_gates(kc,'ad.test',kc.find_client('ad.test','legacy1'))),1)
+        finally:
+            kc.delete('/ad.test/clients/'+kc.find_client('ad.test','legacy1')['id'])
+
+    def test_15_reconcile_restores_missing_parts(self):
+        kc=self.kc
+        client=kc.find_client('ad.test','vaultwarden1')
+        for mapper in idpaccess._token_gates(kc,'ad.test',client):
+            kc.delete('/ad.test/clients/'+client['id']+'/protocol-mappers/models/'+mapper['id'])
+        action=next(a for a in kc.get('/ad.test/authentication/required-actions') if a['providerId']==idpaccess.ACTION)
+        action['enabled']=False
+        kc.put('/ad.test/authentication/required-actions/'+action['alias'],action)
+        state=idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))
+        self.assertFalse(state['enforced'])
+        self.assertEqual(set(state['issues']),{'token_gate_missing','required_action_disabled'})
+        idpaccess.reconcile(kc,'ad.test',idprealm.module_clients(kc,'ad.test'))
+        self.assertTrue(idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))['enforced'])
+        _,r,target,_=self.auth('denied')
+        self.assertIsNone(target)
+
+    def test_16_client_removed_and_registered_again(self):
+        """Module removal deletes its client; a new module instance with the
+        same ID registers a new client, without policy until set again."""
+        kc=self.kc
+        kc.delete('/ad.test/clients/'+kc.find_client('ad.test','vaultwarden1')['id'])
+        redirect=[self.vw_url+'/identity/connect/oidc-signin']
+        idprealm.ensure_client(kc,'ad.test','vaultwarden1',redirect_uris=redirect,access_token_lifespan=600)
+        client=kc.find_client('ad.test','vaultwarden1')
+        client['secret']=self.secret
+        kc.put('/ad.test/clients/'+client['id'],client)
+        self.assertFalse(idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))['enforced'])
+        state=idpaccess.set_policy(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'),'services_vaultwarden')
+        self.assertTrue(state['enforced'])
+        _,r,target,_=self.auth('denied')
+        self.assertIsNone(target)
+        s,r,target,verifier=self.auth('allowed',mobile=True)
+        self.assertTrue(target and target.startswith('bitwarden://sso-callback'))
 
 
 if __name__=='__main__':

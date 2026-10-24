@@ -1,7 +1,7 @@
 name: NS8 prototype on QEMU
 on:
   push:
-    branches: [codex/vaultwarden-sso]
+    branches: [codex/vaultwarden-sso, claude/idp-upstream-integration]
     paths:
       - '.github/workflows/ns8-prototype.yml'
       - 'Containerfile'

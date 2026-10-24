@@ -1,1 +1,1 @@
-com.example.idp.GroupTokenGate
+org.nethserver.keycloak.access.GroupTokenGate

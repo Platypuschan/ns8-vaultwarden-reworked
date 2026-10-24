@@ -38,6 +38,7 @@ class BindingTests(unittest.TestCase):
         agent,tasks=self.run_prepare(['ad.test'])
         agent.bind_user_domains.assert_not_called()
         self.assertEqual(tasks.run.call_args.kwargs['action'],'register-client')
+        self.assertEqual(tasks.run.call_args.kwargs['data']['access_token_lifespan'],600)
 
     def test_new_binding_is_established_before_registration(self):
         agent,tasks=self.run_prepare([])
