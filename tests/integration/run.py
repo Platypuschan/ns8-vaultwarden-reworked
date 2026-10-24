@@ -200,7 +200,7 @@ class LoginTests(unittest.TestCase):
         cmd('podman','volume','rm',f'vw-data-{cls.suffix}',check=False)
         cmd('podman','network','rm',cls.network,check=False)
 
-    def auth(self, username, session=None, client='vaultwarden1', mobile=False):
+    def auth(self, username, session=None, client='vaultwarden1', mobile=False, require_cookie=False):
         s=session or requests.Session()
         verifier=secrets.token_urlsafe(48)
         challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
@@ -229,6 +229,8 @@ class LoginTests(unittest.TestCase):
                 continue
             form=Form(r.text)
             if form.action:
+                if require_cookie:
+                    self.fail('Expected reuse of the existing SSO cookie; password fallback would invalidate this test')
                 r=s.post(form.action,data={'username':username,'password':self.password},allow_redirects=False,timeout=20)
                 continue
             return s,r,None,verifier
@@ -271,11 +273,11 @@ class LoginTests(unittest.TestCase):
         try:
             for label,s,mobile in [('existing cookie',session,False),('new device',None,True)]:
                 with self.subTest(label=label):
-                    _,r,target,_=self.auth('allowed',session=s,mobile=mobile)
+                    _,r,target,_=self.auth('allowed',session=s,mobile=mobile,require_cookie=s is not None)
                     self.assertIsNone(target,f'{label}: got a callback after revocation')
                     self.assertEqual(r.status_code,403)
             # Login to other applications still succeeds after removal.
-            _,_,target,_=self.auth('allowed',session=session,client='other1')
+            _,_,target,_=self.auth('allowed',session=session,client='other1',require_cookie=True)
             self.assertIn('code=',target or '')
         finally:
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
@@ -315,6 +317,9 @@ class LoginTests(unittest.TestCase):
     def test_07_directory_unavailable_denies(self):
         session,_,target,_=self.auth('allowed',client='other1')
         self.assertIn('code=',target or '')
+        # With LDAP unavailable, Keycloak may invalidate cookie authentication
+        # and show a fresh login form. That is safe; completing it must still
+        # produce neither an authorization code nor a token.
         cmd('podman','pause',self.samba)
         try:
             _,r,target,_=self.auth('allowed',session=session)

@@ -47,8 +47,8 @@ Die QEMU-Pipeline dieses Repositorys baut vier zusammengehörige Images mit
 Das Paket ist kein Katalog-/Stable-Release.
 
 ```bash
-# Beispiel ersetzen durch den in TESTING.md nachgewiesenen Prototyp-Tag.
-VW_PROTOTYPE_TAG='prototype-f781b68b8724'
+# Auf Debian 13 und Rocky 9 / Core 3.23.2 geprüfter Stand, siehe TESTING.md.
+VW_PROTOTYPE_TAG='prototype-89a52bc0f978'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-vaultwarden-prototype:${VW_PROTOTYPE_TAG}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden:${VW_PROTOTYPE_TAG}"
 ```
@@ -125,7 +125,8 @@ diese App-URI als alleinigen Keycloak-Callback eintragen.
 
 ## 5. Gruppenregel administrativ setzen
 
-Die AD-Gruppe muss vorhanden sein. Vorgesehene Benutzer direkt aufnehmen und
+Die AD-Gruppe muss vorhanden sein. Falls nötig in NS8 unter „Domänen und
+Benutzer“ die Domäne auswählen und die Gruppe anlegen. Vorgesehene Benutzer direkt aufnehmen und
 deren `mail`-Attribut prüfen. Der Pfad bezeichnet die von Keycloak importierte
 AD-Gruppe, keine Vaultwarden-Organisation und keinen OIDC-Scope.
 
