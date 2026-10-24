@@ -1,0 +1,72 @@
+# Code-backed review of the ns8-idp discussion draft
+
+Date: 2026-10-24. Task: `20261024-codex-idp-draft-tests`.
+Review base: prototype `a7d5aedbd02143ba6f71fca0bc121113c88d0dc0`
+(code `0dd6733323092c2f20fd5ac7277ec842253bf5af`),
+upstream `433fa069c2eab4c073303769ac84c40b37a2676b`.
+No module implementation changes; additions are review tests and a test-image override.
+
+## Findings
+
+The revised draft is a useful discussion proposal. Claude's corrections to the
+existing concurrency test, grant flags and ADR link are supported. The original
+QEMU race is documented in ADR 0001; the original failure was not rerun here.
+
+Additional behavior checks establish:
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| Unknown policy group | Client remains enabled and unrestricted | Real Keycloak; preflight fails before any disabling |
+| Failure writing the token mapper | Client remains disabled, with incomplete policy | Injected exception at mapper creation, otherwise real REST operations |
+| Reconcile after failed update | Mapper repaired, client still disabled | Re-enabling needs administrator action; enforced can be true while enabled is false |
+| Unexpected implicit/direct/service-account flags | Reported as issues; registration resets flags and preserves policy | Real Keycloak; reconciliation alone does not reset these flags |
+| Default token lifetime and reset | Realm default is 300 s; issued tokens report approximately 300 s | Real Keycloak; tolerate time elapsed during issuance |
+| Vaultwarden session lifetime | Mobile OIDC exchange reports approximately 600 s | Actual patched Vaultwarden runtime; no physical Bitwarden app |
+| Referenced subflow deletion | Deleting wrapper or its execution deletes referenced flow | Real Keycloak 26.7.4 in a separate disposable realm |
+| Account without LDAP link | Unrestricted client works, restricted client rejects even with local group assignment | Real local Keycloak account; does not replace the existing broker test |
+| Nested group membership | Denied; adding direct membership allows | Actual Samba AD |
+| LDAP group deleted | Login denied, but actual get-client-access action still reports enforced=true and issues=[] | Imported group remains in Keycloak; this is a structural check, not fresh LDAP health |
+| Lock boundaries | Both overlay actions wait for held realms lock; both upstream negative controls enter Keycloak without waiting | Unmodified scripts; actual process/file locking with NS8 service fakes; not a PostgreSQL race reproduction |
+| Event triggers | Four real event handlers invoke reconciliation when Keycloak is active and skip it when inactive | Real shell scripts, fake systemctl and executable marker |
+
+Reconciliation runs on startup **and** user-domain, module-domain,
+module-removal and smarthost events. It is not a continuous repair loop.
+Existing required actions/realm flow settings are preserved; future MFA
+compatibility is not proven by these tests.
+
+## Reproduction
+
+Run in the repository checkout with Podman and Python requests available.
+Use the existing Samba test image `localhost/ns8-vaultwarden-test-samba`
+and the matching patched Vaultwarden image `localhost/vaultwarden-sso-only`
+(or `VW_RUNTIME_IMAGE`). Build instructions are in the prototype workflow.
+Set `IDP_UPSTREAM_ROOT` to a checkout at the exact upstream commit above.
+
+```bash
+export IDP_RUNTIME_IMAGE=ghcr.io/platypuschan/idp-keycloak@sha256:eb76b6d0a4b6aa5c7f9c8a2ef20a67101feecfb53f4f4f325c7f9bda68f22d3f
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 tests/check_syntax.py
+python3 tests/integration/run.py
+python3 tests/integration/review_evidence.py
+IDP_UPSTREAM_ROOT=/path/to/ns8-idp python3 tests/review/test_action_boundaries.py
+```
+
+Review environment: local rootless Podman in disposable networks/containers,
+Keycloak dev-file database, actual Samba AD and patched Vaultwarden 1.37.2.
+IdP image ID: `d7e0aa5d629550cd8f09fadf1ca4c77a1593c2af49301022e1cd725fe45e5350`.
+Vaultwarden image ID: `90f4ae1bfbfd6b225c7f692892e3acd340027a6f0fefb3599dd08657515148a3`.
+
+## Validation and limits
+
+- 7 existing unit tests, syntax, 16 existing protocol tests: passed.
+- 6 additional protocol tests and 3 action/event tests: passed.
+- Initial additional-test run needed two fixture corrections: tolerate 299 s
+  instead of requiring exactly 300 s; populate required first/last name on the
+  local-only account so profile completion does not mask the authorization check.
+- Existing CI runs 40127209220 and 40127193380 independently queried: successful
+  at code SHA 0dd6733; QEMU Debian/Rocky jobs successful. No new CI or QEMU run.
+- No production, live Entra, physical mobile UI, performance, complete upstream
+  upgrade/backup/restore matrix or PostgreSQL race reproduction in this review.
+- The requested 600 s lifetime and actual issued lifetimes were tested. The
+  Bitwarden frontend's refresh scheduling was not tested here, so it should not
+  be presented as a new experimentally verified requirement.

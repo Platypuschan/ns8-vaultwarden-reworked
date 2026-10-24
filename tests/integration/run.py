@@ -136,7 +136,7 @@ class LoginTests(unittest.TestCase):
         env = dict(os.environ, KC_BOOTSTRAP_ADMIN_USERNAME='admin', KC_BOOTSTRAP_ADMIN_PASSWORD=cls.password)
         cmd('podman', 'run', '-d', '--name', cls.keycloak, '--network', cls.network,
             '-p', f'127.0.0.1:{cls.kc_port}:8080', '--env', 'KC_BOOTSTRAP_ADMIN_USERNAME',
-            '--env', 'KC_BOOTSTRAP_ADMIN_PASSWORD', 'localhost/ns8-idp-group-prototype',
+            '--env', 'KC_BOOTSTRAP_ADMIN_PASSWORD', os.environ.get('IDP_RUNTIME_IMAGE', 'localhost/ns8-idp-group-prototype'),
             'start-dev', '--db=dev-file', '--features=scripts', '--hostname=' + cls.url,
             env=env)
         cls.names.append(cls.keycloak)
