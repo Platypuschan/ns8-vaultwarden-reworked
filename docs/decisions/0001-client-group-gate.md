@@ -86,3 +86,13 @@ A restored Vaultwarden instance remains disabled until it is registered again,
 its policy is applied and it is explicitly configured. Its data is preserved.
 Migration of an existing non-SSO account store and full cluster disaster recovery
 are outside this initial prototype.
+
+## NS8 event concurrency found by the QEMU test
+
+On Core 3.23.2 / PostgreSQL, re-registering the existing client raced with
+`keycloak-post-start` handling `module-domain-changed`. Both rewrote the same
+LDAP component and PostgreSQL returned an optimistic-lock error. The prototype
+overlay wraps reconciliation in the same `idprealm.realms_lock()` already used
+by registrations and policy changes. The application also avoids rebinding an
+unchanged user domain. This is a targeted correction to the pinned IdP baseline,
+not a retry that conceals a failed configuration.

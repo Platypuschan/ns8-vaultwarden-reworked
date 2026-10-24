@@ -15,7 +15,8 @@ def task(config, action, data):
 
 
 def prepare(config):
-    agent.bind_user_domains([config['domain']], check=True)
+    if agent.get_bound_domain_list(agent.redis_connect()) != [config['domain']]:
+        agent.bind_user_domains([config['domain']], check=True)
     registration = task(config, 'register-client', {
         'domain': config['domain'],
         'redirect_uris': ['https://' + config['host'] + '/identity/connect/oidc-signin'],

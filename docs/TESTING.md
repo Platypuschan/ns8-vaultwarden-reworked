@@ -72,8 +72,27 @@ python3 tests/integration/run.py
 
 Lauf zum Stand `9af96e39715835359cd2562bd22f7b009b02cce1`:
 [NS8-Prototyp-Pipeline](https://github.com/Platypuschan/ns8-vaultwarden/actions/runs/40035171577).
-Image-Build erfolgreich; Debian-13- und Rocky-9-Szenarien noch in Prüfung.
-Ergebnisse werden vor Abschluss ergänzt.
+Image-Build erfolgreich. Beide ersten NS8-Szenarien scheiterten im Testparser:
+`add-module` liefert eine Python-Dict-Repräsentation, keine JSON-Zeichenkette.
+Dieser Fehler wurde korrigiert; die abhängigen Folgefehler sind kein Nachweis
+für eine funktionierende oder defekte Anwendungskonfiguration.
+
+Zusätzlicher positiver Kontrolltest am originalen Vaultwarden-1.37.2-Image:
+ein in der Testdatenbank hinterlegter gültiger persönlicher API-Key lieferte
+nach AD-Gruppenentzug weiterhin einen neuen Geräte-Access-Token. Tatsächlich
+ausgeführt, 25,996 Sekunden, erfolgreich reproduziert. Die einzelne
+`client_credentials`-Sperre im SSO-only-Modus ist deshalb Bestandteil des
+Runtime-Prototyps. Der neue Test 10 prüft die Verweigerung mit genau einem
+gültigen Schlüssel, nicht bloß die Verweigerung eines ungültigen Schlüssels.
+
+Neuer Prüfstand `f781b68b872416cf46d20ffac42b96e5504579ee`:
+[NS8-QEMU](https://github.com/Platypuschan/ns8-vaultwarden/actions/runs/40089169752),
+[Validierung und Protokolltests](https://github.com/Platypuschan/ns8-vaultwarden/actions/runs/40089169458).
+Gepatchter Runtime-Build lokal erfolgreich (Rust 1.97.1, SQLite, 6 Minuten
+55 Sekunden). Danach 5 lokale Konfigurationstests und alle 10 lokalen
+Protokolltests grün (50,716 Sekunden). Die veröffentlichte CI-Validierung zu
+diesem Stand ist ebenfalls vollständig grün, einschließlich aller 10
+Protokolltests mit dem gepatchten Runtime. NS8-QEMU-Ergebnisse noch offen.
 
 Core wird gezielt mit `ghcr.io/nethserver/core:3.23.2` installiert. Die Suite
 installiert die beiden Prototypmodule, richtet ein internes Samba-AD ein,

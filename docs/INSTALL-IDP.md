@@ -48,7 +48,7 @@ Das Paket ist kein Katalog-/Stable-Release.
 
 ```bash
 # Beispiel ersetzen durch den in TESTING.md nachgewiesenen Prototyp-Tag.
-VW_PROTOTYPE_TAG='prototype-9af96e397158'
+VW_PROTOTYPE_TAG='prototype-f781b68b8724'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-vaultwarden-prototype:${VW_PROTOTYPE_TAG}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden:${VW_PROTOTYPE_TAG}"
 ```

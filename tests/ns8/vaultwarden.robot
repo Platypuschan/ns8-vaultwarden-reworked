@@ -70,6 +70,13 @@ Activate application and verify private settings
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
 
+Concurrent IdP reconciliation and reconfiguration
+    SSHLibrary.Put File    ${CURDIR}/check_reconfigure.sh    /tmp/vaultwarden-reconfigure-test.sh
+    ${rc} =    Execute Command    bash /tmp/vaultwarden-reconfigure-test.sh ${IDP} ${APP} ${APP_HOST} ${DOMAIN}    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    Policy is enforced
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+
 Application cannot change its access policy
     ${rc} =    Execute Command    runagent -m ${APP} api-cli run module/${IDP}/set-client-access --data '{"domain":"${DOMAIN}","client_id":"${APP}","group_path":"/other"}'    return_rc=True    return_stdout=False
     Should Not Be Equal As Integers    ${rc}    0

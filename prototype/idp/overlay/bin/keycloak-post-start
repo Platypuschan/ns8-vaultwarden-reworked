@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2026 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+#
+# Apply the settings that must follow the cluster configuration to every
+# realm managed by the module. It runs after every Keycloak start, and
+# when such settings change, because events can be lost:
+#
+# - the LDAP federation follows the user domain settings;
+# - a module client exists only while the module is bound to the user
+#   domain of the realm;
+# - the SMTP settings follow the node smarthost.
+#
+
+import os
+import sys
+
+import agent
+import agent.ldapproxy
+import idprealm
+import kcadmin
+
+def smtp_server_rep(settings):
+    """Map the node smarthost settings to a realm smtpServer
+    representation. The TLS certificate verification is a server-wide
+    setting of Keycloak and it is not mapped."""
+    if not settings["enabled"] or not settings["host"]:
+        return {}
+    rep = {
+        "host": settings["host"],
+        "port": str(settings["port"]),
+        "from": os.environ.get("IDP_SMTP_FROM") or "no-reply@" + os.environ["IDP_HOSTNAME"],
+        "fromDisplayName": "Single Sign-On",
+        "starttls": "true" if settings["encrypt_smtp"] == "starttls" else "false",
+        "ssl": "true" if settings["encrypt_smtp"] == "tls" else "false",
+        "auth": "true" if settings["username"] else "false",
+    }
+    if settings["username"]:
+        rep["user"] = settings["username"]
+        rep["password"] = settings["password"]
+    return rep
+
+# Prototype fix: event reconciliation, client registration and group-policy
+# updates mutate the same LDAP component. Serialize all of them with the
+# existing realms lock, not an unrelated per-event lock.
+with idprealm.realms_lock():
+    rdb = agent.redis_connect(use_replica=True)
+    smtp_server = smtp_server_rep(agent.get_smarthost_settings(rdb))
+
+    user_domains = agent.ldapproxy.Ldapproxy().get_domains_list()
+
+    kc = kcadmin.agent_client()
+    for realm in kcadmin.managed_realms(kc):
+        if realm in user_domains:
+            idprealm.ensure_federation(kc, realm)
+        else:
+            print(agent.SD_WARNING + f"User domain {realm} not found: the LDAP federation of its realm is not updated", file=sys.stderr)
+
+        for client in idprealm.module_clients(kc, realm):
+            module_id = client["attributes"][idprealm.MODULE_ATTRIBUTE]
+            if realm not in (rdb.hget("cluster/module_domains", module_id) or "").split():
+                print(f"Deleting client {client['clientId']} of realm {realm}: module {module_id} is not bound to the user domain", file=sys.stderr)
+                kc.delete(f"/{realm}/clients/{client['id']}")
+
+        print(f"Applying SMTP settings to realm {realm}", file=sys.stderr)
+        kc.put(f"/{realm}", {"smtpServer": smtp_server})
