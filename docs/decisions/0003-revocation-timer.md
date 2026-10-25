@@ -1,7 +1,7 @@
 # 0003: Revocation timer with an internal admin token
 
 Date: 2026-10-25. Status: implemented on branch `claude/reworked-hardening`,
-not released. Base: 0.1.0-rc.1 (`f58aae6`), Vaultwarden 1.37.2.
+planned for 0.1.0-rc.2. Base: 0.1.0-rc.1 (`f58aae6`), Vaultwarden 1.37.2.
 
 User request (chat, 25.10.2026): implement the proposed revocation with an
 internal admin token; asked whether offline vaults can be deactivated too.

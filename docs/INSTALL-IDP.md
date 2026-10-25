@@ -1,6 +1,6 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 25.10.2026. Veröffentlichte Vorabversion **0.1.0-rc.1**. Beide eigenständigen Pakete wurden auf NS8 Core 3.23.2 unter Debian 13 und Rocky 9 gemeinsam geprüft, jeweils 9/9 Tests. [Release-Prüfnachweise und Digests](RELEASE-0.1.0-rc.1.md). Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
+Stand: 25.10.2026. Vorabversion **0.1.0-rc.2**, vorbereitet und noch nicht veröffentlicht; zuletzt veröffentlicht ist 0.1.0-rc.1 ([Prüfnachweise und Digests](RELEASE-0.1.0-rc.1.md)). Diese Anleitung beschreibt rc.2; die gemeinsame NS8-Prüfung von rc.2 erfolgt im Release-Workflow. Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
@@ -44,7 +44,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.1'
+VW_VERSION='0.1.0-rc.2'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
 ```
@@ -118,7 +118,7 @@ Benutzer“ die Domäne auswählen und die Gruppe anlegen. Vorgesehene Benutzer 
 deren `mail`-Attribut prüfen. Der Pfad bezeichnet die von Keycloak importierte
 AD-Gruppe, keine Vaultwarden-Organisation und keinen OIDC-Scope.
 
-**In der Oberfläche** (IdP nach 0.1.0-rc.1, Branch `claude/reworked-hardening`):
+**In der Oberfläche** (ab IdP 0.1.0-rc.2):
 in der IdP-Instanz die Seite **Zugriff** öffnen, beim Client
 `vaultwarden-reworked1` die Gruppe `services_vaultwarden` wählen und
 **Speichern**. Danach prüft die Seite die Regel live (**Prüfen**): LDAP
@@ -134,7 +134,7 @@ api-cli run module/idp-reworked1/get-client-access --data \
   '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","live":true,"user":"alice"}'
 ```
 
-`live` und `user` setzen einen IdP nach 0.1.0-rc.1 voraus. Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
+`live` und `user` setzen IdP 0.1.0-rc.2 voraus. Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
 `group_path:"/services_vaultwarden"`, mit `live` zusätzlich `live.ok:true`
 und für ein Mitglied `live.user_allowed:true`. `list-realms` zeigt die Gruppe zusätzlich
 als `access_group` des Clients. Die Aktion importiert die Gruppenobjekte,
@@ -145,7 +145,7 @@ Was sich gegenüber dem ersten Prototyp geändert hat:
 
 - Kein eigener Anmeldeflow pro Client. Keycloak wertet die Required Action nach
   jeder Anmeldung aus: Passwort und vorhandene SSO-Sitzung, auch bei SAML.
-  Externe IdPs wie Entra ID unterstützt der IdP nach 0.1.0-rc.1 nicht mehr.
+  Externe IdPs wie Entra ID unterstützt der IdP ab 0.1.0-rc.2 nicht mehr.
   Künftige MFA-Szenarien benötigen eigene Kompatibilitätstests.
 - Der LDAP-Benutzercache bleibt eingeschaltet. Die Prüfung entfernt nur den
   anmeldenden Benutzer aus dem Cache und liest seine Gruppen live aus LDAP.
