@@ -1,11 +1,11 @@
 # ns8-vaultwarden-reworked
 
-Vorabversion **0.1.0-rc.2** für NethServer 8, vorbereitet und noch nicht veröffentlicht; zuletzt veröffentlicht ist 0.1.0-rc.1. Vaultwarden 1.37.2 mit SSO-only und administrativer AD-Gruppenfreigabe über `idp-reworked`.
+Veröffentlichte Vorabversion **0.1.0-rc.2** für NethServer 8. Vaultwarden 1.37.2 mit SSO-only und administrativer AD-Gruppenfreigabe über `idp-reworked`.
 
 Die Runtime sperrt zusätzlich persönliche API-Key-Gerätelogins im SSO-only-Modus. Mitgliedschaft wird durch den IdP bei neuen Anmeldungen und Token-Erneuerung geprüft. Ein Timer des Moduls deaktiviert alle zwei Minuten die Vaultwarden-Konten von Benutzern, die nicht mehr in der Gruppe sind, und beendet so auch bestehende Sitzungen ([Widerruf](docs/INSTALL-IDP.md#widerruf-bestehender-sitzungen)). Offline-Tresore auf den Geräten lassen sich serverseitig nicht löschen.
 
 - [Installation und Aktivierung](docs/INSTALL-IDP.md)
-- [Release-Prüfnachweise und Image-Digests 0.1.0-rc.1](docs/RELEASE-0.1.0-rc.1.md)
+- [Release-Prüfnachweise und Image-Digests](docs/RELEASE-0.1.0-rc.2.md) ([0.1.0-rc.1](docs/RELEASE-0.1.0-rc.1.md))
 - [Release-Ablauf](docs/PRERELEASE.md)
 - [Historische Prototyp-Prüfnachweise](docs/TESTING.md)
 - Entscheidungen: [ADR 0003 Widerruf-Timer](docs/decisions/0003-revocation-timer.md)
