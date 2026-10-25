@@ -1,6 +1,6 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 25.10.2026. Vorbereitete Vorabversion **0.1.0-rc.1**. Veröffentlichung und gemeinsame Paketprüfung stehen noch aus; die historische Prototyp-Prüfung ist kein Testnachweis für die neu benannten Pakete.
+Stand: 25.10.2026. Veröffentlichte Vorabversion **0.1.0-rc.1**. Beide eigenständigen Pakete wurden auf NS8 Core 3.23.2 unter Debian 13 und Rocky 9 gemeinsam geprüft, jeweils 9/9 Tests. [Release-Prüfnachweise und Digests](RELEASE-0.1.0-rc.1.md). Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
@@ -41,7 +41,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 
 ## 2. Zusammengehörige Vorabversionen festlegen
 
-Nach Veröffentlichung beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
+Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
 VW_VERSION='0.1.0-rc.1'

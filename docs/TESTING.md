@@ -1,6 +1,6 @@
 # Aktueller Reworked-Prüfumfang
 
-Die nachfolgenden Abschnitte sind historische Prototyp-Nachweise. Die neuen Paketnamen und der unabhängige IdP benötigen eine eigene NS8-Prüfung. Die aktuelle lokale Protokollsuite benötigt IDP_SOURCE_ROOT (Checkout des unabhängigen IdP), IDP_RUNTIME_IMAGE und VW_RUNTIME_IMAGE. Die alte Prototyp-Migrationsprüfung wurde entfernt.
+Die nachfolgenden Abschnitte sind historische Prototyp-Nachweise. Die eigenständigen RC-Pakete sind inzwischen gemeinsam in NS8 geprüft; siehe [Release-Bericht](RELEASE-0.1.0-rc.1.md). Die aktuelle lokale Protokollsuite benötigt IDP_SOURCE_ROOT (Checkout des unabhängigen IdP), IDP_RUNTIME_IMAGE und VW_RUNTIME_IMAGE. Die alte Prototyp-Migrationsprüfung wurde entfernt.
 
 ```sh
 IDP_SOURCE_ROOT=/pfad/ns8-idp-reworked IDP_RUNTIME_IMAGE=localhost/idp-reworked-keycloak:0.1.0-rc.1 VW_RUNTIME_IMAGE=localhost/vaultwarden-reworked-server:0.1.0-rc.1 python3 tests/integration/run.py
