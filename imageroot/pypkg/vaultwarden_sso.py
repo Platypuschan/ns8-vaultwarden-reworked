@@ -14,6 +14,22 @@ def task(config, action, data):
     return json.loads(output) if isinstance(output, str) else output
 
 
+ADMIN_ROUTE_SUFFIX = '-admin'
+
+
+def block_admin_route(traefik, config):
+    """Route the admin pages apart from the application and allow only
+    the loopback address: Traefik denies them to every client. The
+    revoke-access timer calls them on the loopback port of the
+    container, without Traefik."""
+    response = agent.tasks.run(agent_id=traefik, action='set-route', data={
+        'instance': os.environ['MODULE_ID'] + ADMIN_ROUTE_SUFFIX,
+        'url': 'http://127.0.0.1:' + os.environ['TCP_PORT'],
+        'host': config['host'], 'path': '/admin', 'ip_allowlist': ['127.0.0.1/32'],
+        'http2https': True, 'lets_encrypt': config['lets_encrypt']})
+    agent.assert_exp(response['exit_code'] == 0, 'Traefik admin route configuration failed')
+
+
 def prepare(config):
     if agent.get_bound_domain_list(agent.redis_connect()) != [config['domain']]:
         agent.bind_user_domains([config['domain']], check=True)
@@ -26,7 +42,7 @@ def prepare(config):
         # lifespan than 10 minutes makes them refresh on every request
         'access_token_lifespan': 600,
     })
-    env = policy.environment(config, registration)
+    env = policy.environment(config, registration, policy.admin_token())
     policy.private_write('vaultwarden.env', env)
     policy.private_write('settings.json', json.dumps(config))
     return registration

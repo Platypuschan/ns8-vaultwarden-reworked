@@ -3,6 +3,13 @@ import os
 import subprocess
 from pathlib import Path
 
+# The backup includes the accounts disabled by the revocation timer: the
+# file must exist
+if not os.path.exists('revoked-users.json'):
+    fd = os.open('revoked-users.json', os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write('{}')
+
 active = subprocess.run(['systemctl','--user','is-active','--quiet','vaultwarden.service']).returncode == 0
 try:
     if active: subprocess.run(['systemctl','--user','stop','vaultwarden.service'],check=True)

@@ -3,10 +3,12 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import tempfile
 from urllib.parse import urlsplit
 
 
+ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
 HOST = re.compile(r'(?=.{1,253}\Z)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\Z')
 MODULE = re.compile(r'[a-z][a-z0-9-]*[1-9][0-9]*\Z')
 
@@ -26,7 +28,7 @@ def validate(data):
         'required_group': group, 'lets_encrypt': data.get('lets_encrypt', True)}
 
 
-def environment(config, registration):
+def environment(config, registration, admin_token):
     issuer = registration['issuer']
     url = urlsplit(issuer)
     if (url.scheme != 'https' or not url.hostname or url.username or url.password
@@ -34,6 +36,8 @@ def environment(config, registration):
         raise ValueError('Unexpected OIDC issuer')
     if not MODULE.fullmatch(registration['client_id']):
         raise ValueError('Invalid client ID')
+    if not isinstance(admin_token, str) or not ADMIN_TOKEN.fullmatch(admin_token):
+        raise ValueError('Invalid admin token')
     # Values go directly into a Podman env file, never through shell sourcing.
     values = {
         'DOMAIN': 'https://' + config['host'], 'SSO_ENABLED': 'true', 'SSO_ONLY': 'true',
@@ -46,6 +50,9 @@ def environment(config, registration):
         'EMAIL_CHANGE_ALLOWED': 'false', 'PUSH_ENABLED': 'false',
         'ROCKET_PORT': '80', 'IP_HEADER': 'X-Forwarded-For',
         'IP_HEADER_TRUSTED_PROXIES': 'local',
+        # Used only by the revoke-access timer, on the loopback port: the
+        # admin pages are not routed outside the node
+        'ADMIN_TOKEN': admin_token,
     }
     if any(not isinstance(v, str) or any(c in v for c in '\r\n\x00') for v in values.values()):
         raise ValueError('Invalid multiline environment value')
@@ -56,6 +63,19 @@ def require_policy(config, state):
     if (state.get('enforced') is not True or state.get('enabled') is not True
             or state.get('group_path') != '/' + config['required_group']):
         raise ValueError('IdP group policy is missing, disabled or differs from required_group')
+
+
+def admin_token(env_path='vaultwarden.env'):
+    """Return the admin token of the environment file, or a new one."""
+    try:
+        with open(env_path) as f:
+            for line in f:
+                name, _, value = line.rstrip('\n').partition('=')
+                if name == 'ADMIN_TOKEN' and ADMIN_TOKEN.fullmatch(value):
+                    return value
+    except FileNotFoundError:
+        pass
+    return secrets.token_urlsafe(48)
 
 
 def private_write(path, text):

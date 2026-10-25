@@ -10,9 +10,11 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from html.parser import HTMLParser
@@ -29,8 +31,9 @@ for name in ('agent', 'agent.ldapproxy', 'agent.tasks', 'cluster', 'cluster.user
 IDP_SOURCE_ROOT = Path(os.environ['IDP_SOURCE_ROOT']).resolve()
 sys.path.insert(0, str(IDP_SOURCE_ROOT / 'imageroot/pypkg'))
 import idpaccess
-import idpfed
 import idprealm
+sys.path.insert(0, str(ROOT / 'imageroot/pypkg'))
+import vaultwarden_revoke
 
 
 class Form(HTMLParser):
@@ -122,7 +125,8 @@ class LoginTests(unittest.TestCase):
         cls.vaultwarden = 'vw-app-' + cls.suffix
         cls.names = []
         cls.password = secrets.token_urlsafe(24) + 'Aa1!'
-        cls.kc_port, cls.vw_port = port(), port()
+        cls.kc_port, cls.vw_port, cls.ldap_port = port(), port(), port()
+        cls.admin_token = secrets.token_urlsafe(48)
         cls.url = f'http://127.0.0.1:{cls.kc_port}'
         cls.vw_url = f'http://127.0.0.1:{cls.vw_port}'
         cls.addClassCleanup(cls.cleanup)
@@ -130,6 +134,9 @@ class LoginTests(unittest.TestCase):
         env = dict(os.environ, AD_PASSWORD=cls.password)
         cmd('podman', 'run', '-d', '--name', cls.samba, '--hostname', 'dc.ad.test',
             '--network', cls.network, '--network-alias', 'samba', '--env', 'AD_PASSWORD',
+            # LDAP on loopback, standing in for the NS8 ldapproxy of the
+            # revocation timer
+            '-p', f'127.0.0.1:{cls.ldap_port}:389',
             'localhost/ns8-vaultwarden-test-samba', env=env)
         cls.names.append(cls.samba)
         env = dict(os.environ, KC_BOOTSTRAP_ADMIN_USERNAME='admin', KC_BOOTSTRAP_ADMIN_PASSWORD=cls.password)
@@ -193,7 +200,7 @@ class LoginTests(unittest.TestCase):
             SSO_AUTHORITY=cls.url+'/realms/ad.test', SSO_CLIENT_ID='vaultwarden1',
             SSO_CLIENT_SECRET=cls.secret, SSO_SCOPES='profile email', SSO_PKCE='true',
             SIGNUPS_ALLOWED='false', SSO_SIGNUPS_ALLOWED='true', SSO_SIGNUPS_MATCH_EMAIL='false',
-            SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION='false', ROCKET_PORT='80')
+            SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION='false', ROCKET_PORT='80', ADMIN_TOKEN=cls.admin_token)
         # OIDC discovery/token calls from the container must reach the exact
         # loopback issuer. Sharing the host network is confined to this test.
         args = ['podman','run','-d','--name',cls.vaultwarden,'--network','host']
@@ -201,7 +208,7 @@ class LoginTests(unittest.TestCase):
         env['ROCKET_ADDRESS']='127.0.0.1'
         for key in ('DOMAIN','SSO_ENABLED','SSO_ONLY','SSO_AUTHORITY','SSO_CLIENT_ID','SSO_CLIENT_SECRET',
                 'SSO_SCOPES','SSO_PKCE','SIGNUPS_ALLOWED','SSO_SIGNUPS_ALLOWED','SSO_SIGNUPS_MATCH_EMAIL',
-                'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION','ROCKET_PORT','ROCKET_ADDRESS'):
+                'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION','ROCKET_PORT','ROCKET_ADDRESS','ADMIN_TOKEN'):
             args += ['--env',key]
         args += ['--volume',f'vw-data-{cls.suffix}:/data',os.environ.get('VW_RUNTIME_IMAGE','localhost/vaultwarden-sso-only')]
         cmd(*args,env=env)
@@ -441,126 +448,6 @@ class LoginTests(unittest.TestCase):
         finally:
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
 
-    def broker_auth(self, password, session=None, client='vaultwarden1', federated=False):
-        """Sign in through the external IdP. Return (session, last response,
-        callback URL or None, visited URLs)."""
-        s=session or requests.Session()
-        url=self.url+'/realms/ad.test/protocol/openid-connect/auth?'+urlencode({
-            'client_id':client,'redirect_uri':self.vw_url+'/identity/connect/oidc-signin',
-            'response_type':'code','scope':'openid profile email','state':secrets.token_urlsafe(24)})
-        r=s.get(url,allow_redirects=False,timeout=20)
-        visited=[url]
-        for _ in range(30):
-            for cookie in s.cookies:
-                if cookie.domain == '127.0.0.1': cookie.secure = False
-            if r.is_redirect:
-                target=urljoin(r.url,r.headers['Location'])
-                visited.append(target)
-                if target.startswith(self.vw_url):
-                    return s,r,target,visited
-                r=s.get(target,allow_redirects=False,timeout=20)
-                continue
-            page=Form(r.text)
-            if '/realms/ext/' in r.url and page.action:
-                r=s.post(page.action,data={'username':'fedx','password':password},allow_redirects=False,timeout=20)
-                continue
-            if '/realms/ad.test/' in r.url and page.action:
-                if federated:
-                    self.fail('The password form of the realm is shown in federated login mode')
-                link=next(l for l in page.links if '/broker/ext/' in l)
-                r=s.get(urljoin(r.url,link.replace('&amp;','&')),allow_redirects=False,timeout=20)
-                continue
-            form=next((f for i,f in page.forms.items() if 'profile' in i or 'update' in i),None)
-            if form:
-                # First broker login: review the profile received from the IdP
-                r=s.post(urljoin(r.url,form['action']),data=form['inputs'],allow_redirects=False,timeout=20)
-                continue
-            return s,r,None,visited
-        self.fail('Redirect loop')
-
-    def test_11_writable_federation_and_federated_idp(self):
-        """Realm with a federated IdP, configured with the unchanged upstream
-        functions: writable LDAP federation, NS8 flows, password denial and
-        both login modes. A second realm of the same Keycloak stands in for
-        Microsoft Entra ID."""
-        kc=self.kc
-        comp=kc.get('/ad.test/components/'+self.component['id'])
-        original=dict(comp['config'])
-        comp['config'].update({'editMode':['WRITABLE'],'syncRegistrations':['true']})
-        kc.put('/ad.test/components/'+comp['id'],comp)
-        ext_password=secrets.token_urlsafe(18)+'Aa1!'
-        kc.post('',{'realm':'ext','enabled':True,'sslRequired':'none'})
-        ext_secret=secrets.token_urlsafe(32)
-        kc.post('/ext/clients',{'clientId':'ad-broker','protocol':'openid-connect','publicClient':False,
-            'secret':ext_secret,'standardFlowEnabled':True,
-            'redirectUris':[self.url+'/realms/ad.test/broker/ext/endpoint']})
-        kc.post('/ext/users',{'username':'fedx','enabled':True,'email':'fedx@example.test','emailVerified':True,
-            'firstName':'Fed','lastName':'User','credentials':[{'type':'password','value':ext_password,'temporary':False}]})
-        try:
-            idpfed.ensure_writable_mappers(kc,'ad.test',comp['id'])
-            idpfed.ensure_user_profile(kc,'ad.test')
-            idpfed.ensure_flows(kc,'ad.test')
-            idpfed.ensure_password_denial(kc,'ad.test','ext','External')
-            # Keycloak calls the token endpoint from its own container
-            internal='http://127.0.0.1:8080/realms/ext/protocol/openid-connect'
-            rep=idpfed.entra_idp_rep('ext','External',{'tenant_id':'x','client_id':'ad-broker','client_secret':ext_secret})
-            rep['config'].update({'issuer':self.url+'/realms/ext',
-                'authorizationUrl':self.url+'/realms/ext/protocol/openid-connect/auth',
-                'tokenUrl':internal+'/token','jwksUrl':internal+'/certs',
-                'logoutUrl':self.url+'/realms/ext/protocol/openid-connect/logout'})
-            kc.post('/ad.test/identity-provider/instances',rep)
-            for mapper in idpfed.entra_idp_mappers('ext'):
-                if mapper['name']=='idp id':
-                    mapper['config']['claim']='sub'
-                kc.post('/ad.test/identity-provider/instances/ext/mappers',mapper)
-            # The policy is still complete with the writable federation
-            state=idpaccess.access_state(kc,'ad.test',kc.find_client('ad.test','vaultwarden1'))
-            self.assertTrue(state['enforced'],state)
-            with self.subTest('native accounts with the writable federation'):
-                _,_,target,_=self.auth('allowed')
-                self.assertIn('code=',target or '')
-                _,r,target,_=self.auth('denied')
-                self.assertIsNone(target)
-                self.assertEqual(r.status_code,403)
-            with self.subTest('first federated login creates the account and is denied'):
-                session,r,target,_=self.broker_auth(ext_password)
-                self.assertIsNone(target,'federated non-member got an authorization code')
-                self.assertEqual(r.status_code,403,r.text[-500:])
-                out=cmd('podman','exec',self.samba,'samba-tool','user','show','fedx').stdout
-                self.assertIn('employeeType: ext',out)
-            with self.subTest('same SSO session, unrestricted client'):
-                _,r,target,_=self.broker_auth(ext_password,session=session,client='other1')
-                self.assertIn('code=',target or '',r.text[-500:])
-            cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','fedx')
-            with self.subTest('member after group change, existing SSO session'):
-                _,r,target,_=self.broker_auth(ext_password,session=session)
-                self.assertIn('code=',target or '',r.text[-500:])
-            with self.subTest('federated login mode applies to the restricted client'):
-                idpfed.apply_login_mode(kc,'ad.test','federated')
-                try:
-                    _,r,target,visited=self.broker_auth(ext_password,federated=True)
-                    self.assertTrue(any('/realms/ext/' in u for u in visited))
-                    self.assertIn('code=',target or '',r.text[-500:])
-                finally:
-                    idpfed.apply_login_mode(kc,'ad.test','mixed')
-            cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','fedx')
-            with self.subTest('fresh federated login after removal'):
-                _,r,target,_=self.broker_auth(ext_password)
-                self.assertIsNone(target)
-                self.assertEqual(r.status_code,403)
-        finally:
-            for idp in kc.get('/ad.test/identity-provider/instances'):
-                idpfed.remove_password_denial(kc,'ad.test',idp['alias'])
-                kc.delete('/ad.test/identity-provider/instances/'+idp['alias'])
-            idpfed.reset_flows(kc,'ad.test')
-            idpfed.ensure_read_only_mappers(kc,'ad.test',comp['id'])
-            comp=kc.get('/ad.test/components/'+comp['id'])
-            comp['config'].update({'editMode':original['editMode'],'syncRegistrations':original['syncRegistrations']})
-            kc.put('/ad.test/components/'+comp['id'],comp)
-            kc.delete('/ext')
-        _,_,target,_=self.auth('allowed')
-        self.assertIn('code=',target or '')
-
     def test_12_access_token_lifespan_is_optional(self):
         kc=self.kc
         lifespan=lambda cid: (kc.find_client('ad.test',cid).get('attributes') or {}).get('access.token.lifespan') or None
@@ -641,6 +528,70 @@ class LoginTests(unittest.TestCase):
         self.assertIsNone(target)
         s,r,target,verifier=self.auth('allowed',mobile=True)
         self.assertTrue(target and target.startswith('bitwarden://sso-callback'))
+
+
+    def mobile_login(self, username):
+        """Sign in to Vaultwarden as a new mobile device. Return the token
+        response of Vaultwarden."""
+        _,r,target,verifier=self.auth(username,mobile=True)
+        self.assertTrue(target and target.startswith('bitwarden://sso-callback'),f'HTTP {r.status_code}')
+        return requests.post(self.vw_url+'/identity/connect/token',data={
+            'grant_type':'authorization_code','client_id':'mobile','scope':'api offline_access',
+            'code':parse_qs(urlsplit(target).query)['code'][0],'code_verifier':verifier,
+            'redirect_uri':'bitwarden://sso-callback','deviceIdentifier':secrets.token_hex(16),
+            'deviceName':'Revocation test','deviceType':'0'},timeout=20)
+
+    def refresh(self, refresh_token):
+        return requests.post(self.vw_url+'/identity/connect/token',data={
+            'grant_type':'refresh_token','client_id':'mobile','refresh_token':refresh_token},timeout=20)
+
+    def test_20_revocation_timer_logs_out_existing_sessions(self):
+        """The revoke-access timer, with the real Vaultwarden admin API and
+        the real AD group: an existing device session of a user removed
+        from the group ends at the next run, not when the IdP token
+        expires."""
+        state_dir=tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree,state_dir)
+        settings={'host':'127.0.0.1','port':self.ldap_port,'base_dn':'DC=ad,DC=test',
+            'bind_dn':'CN=Administrator,CN=Users,DC=ad,DC=test','bind_password':self.password,
+            'hidden_users_clause':''}
+        members=lambda:vaultwarden_revoke.group_member_mails(settings,'services_vaultwarden')
+        api=vaultwarden_revoke.AdminAPI(self.vw_url,self.admin_token,state_dir)
+        session=self.mobile_login('allowed')
+        self.assertEqual(session.status_code,200,session.text[:300])
+        self.assertEqual(members(),{'allowed@example.test'})
+        # Nothing to do while the user is a member
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'disabled':[],'enabled':[]})
+        self.assertEqual(self.refresh(session.json()['refresh_token']).status_code,200)
+        cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','allowed')
+        try:
+            self.assertEqual(members(),set())
+            report=vaultwarden_revoke.reconcile(api,members(),state_dir)
+            self.assertEqual(report,{'disabled':['allowed@example.test'],'enabled':[]})
+            account=next(u for u in api.users() if u['email']=='allowed@example.test')
+            self.assertFalse(account['userEnabled'])
+            # The existing device session cannot be refreshed any more
+            refreshed=self.refresh(session.json()['refresh_token'])
+            self.assertNotEqual(refreshed.status_code,200,refreshed.text[:300])
+            self.assertNotIn('access_token',refreshed.json())
+        finally:
+            cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
+        # Member again: enabled at the next run, and a new login works
+        report=vaultwarden_revoke.reconcile(api,members(),state_dir)
+        self.assertEqual(report,{'disabled':[],'enabled':['allowed@example.test']})
+        session=self.mobile_login('allowed')
+        self.assertEqual(session.status_code,200,session.text[:300])
+        # An account disabled by an administrator stays disabled
+        account=next(u for u in api.users() if u['email']=='allowed@example.test')
+        api.disable(account['id'])
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'disabled':[],'enabled':[]})
+        self.assertFalse(next(u for u in api.users() if u['id']==account['id'])['userEnabled'])
+        api.enable(account['id'])
+        # The admin session cookie is kept for the next runs
+        self.assertTrue(Path(state_dir,vaultwarden_revoke.SESSION_FILE).read_text())
+        # A missing group changes nothing
+        with self.assertRaises(vaultwarden_revoke.RevokeError):
+            vaultwarden_revoke.group_member_mails(settings,'no_such_group')
 
 
 if __name__=='__main__':

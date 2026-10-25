@@ -2,4 +2,4 @@
 set -Eeuo pipefail
 # A restored module may have a different module/client ID. Preserve all vault
 # data, but require prepare-sso + administrator policy + configure-module again.
-systemctl --user disable --now vaultwarden.service >&2
+systemctl --user disable --now vaultwarden.service vaultwarden-revoke.timer >&2

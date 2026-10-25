@@ -118,16 +118,25 @@ Benutzer“ die Domäne auswählen und die Gruppe anlegen. Vorgesehene Benutzer 
 deren `mail`-Attribut prüfen. Der Pfad bezeichnet die von Keycloak importierte
 AD-Gruppe, keine Vaultwarden-Organisation und keinen OIDC-Scope.
 
+**In der Oberfläche** (IdP nach 0.1.0-rc.1, Branch `claude/reworked-hardening`):
+in der IdP-Instanz die Seite **Zugriff** öffnen, beim Client
+`vaultwarden-reworked1` die Gruppe `services_vaultwarden` wählen und
+**Speichern**. Danach prüft die Seite die Regel live (**Prüfen**): LDAP
+erreichbar, Gruppe im AD vorhanden, Regel vollständig.
+
+**Per API**, gleichwertig:
+
 ```bash
 api-cli run module/idp-reworked1/alter-realm-client --data \
   '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","access_group":"services_vaultwarden"}'
 
 api-cli run module/idp-reworked1/get-client-access --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1"}'
+  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","live":true,"user":"alice"}'
 ```
 
-Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
-`group_path:"/services_vaultwarden"`. `list-realms` zeigt die Gruppe zusätzlich
+`live` und `user` setzen einen IdP nach 0.1.0-rc.1 voraus. Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
+`group_path:"/services_vaultwarden"`, mit `live` zusätzlich `live.ok:true`
+und für ein Mitglied `live.user_allowed:true`. `list-realms` zeigt die Gruppe zusätzlich
 als `access_group` des Clients. Die Aktion importiert die Gruppenobjekte,
 aktiviert im Realm die Required Action `ns8-client-access` und hängt die
 Tokenprüfung an den Client.
@@ -135,13 +144,11 @@ Tokenprüfung an den Client.
 Was sich gegenüber dem ersten Prototyp geändert hat:
 
 - Kein eigener Anmeldeflow pro Client. Keycloak wertet die Required Action nach
-  jeder Anmeldung aus: Passwort, vorhandene SSO-Sitzung und Anmeldung über einen
-  federierten IdP (z. B. Entra ID). Login-Modus `federated`, Passwortsperre
-  federierter Konten bleiben erhalten. Künftige MFA-Szenarien benötigen eigene Kompatibilitätstests.
+  jeder Anmeldung aus: Passwort und vorhandene SSO-Sitzung, auch bei SAML.
+  Externe IdPs wie Entra ID unterstützt der IdP nach 0.1.0-rc.1 nicht mehr.
+  Künftige MFA-Szenarien benötigen eigene Kompatibilitätstests.
 - Der LDAP-Benutzercache bleibt eingeschaltet. Die Prüfung entfernt nur den
   anmeldenden Benutzer aus dem Cache und liest seine Gruppen live aus LDAP.
-- Auch eine schreibbare Federation (Realm mit federiertem IdP) wird
-  unterstützt; Voraussetzung ist nur der read-only Gruppenmapper von ns8-idp.
 - Clients ohne Gruppenregel sind unverändert.
 
 Regel wieder entfernen (die Tokenprüfung wird mit entfernt):
@@ -152,23 +159,20 @@ api-cli run module/idp-reworked1/alter-realm-client --data \
 ```
 
 Wird die AD-Gruppe umbenannt oder gelöscht, kann sich niemand mehr anmelden;
-die strukturelle Statusabfrage kann bei noch importierter Gruppe dennoch `enforced:true` melden; echte Anmeldungen werden trotzdem verweigert. Regel mit dem neuen Namen
+die strukturelle Statusabfrage kann bei noch importierter Gruppe dennoch
+`enforced:true` melden; die Live-Prüfung meldet `group_not_in_ldap`. Regel mit dem neuen Namen
 erneut setzen. Nach dem Entfernen des Vaultwarden-Moduls löscht der IdP den
 Client samt Regel. Eine Neuinstallation mit gleicher Modul-ID braucht die Regel
 erneut, Vaultwarden startet vorher nicht.
 
-Schlägt das Setzen teilweise fehl, bleibt der Client absichtlich deaktiviert.
-Ursache beheben und Regel erneut setzen; nicht einfach ohne gültige Regel
-aktivieren. Nach erfolgreicher Reparatur lässt sich der Client administrativ
-wieder aktivieren:
-
-```bash
-api-cli run module/idp-reworked1/alter-realm-client --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","enabled":true}'
-```
+Schlägt das Setzen fehl, bleibt der Client unverändert: ohne Regel wie vorher,
+oder bereits beschränkt. Er wird dabei nie deaktiviert; erneutes Setzen
+vervollständigt die Regel. (IdP 0.1.0-rc.1 deaktivierte den Client während der
+Änderung und ließ ihn bei einem Fehler deaktiviert; dort danach mit
+`"enabled":true` wieder aktivieren.)
 
 Der IdP stellt beim Start und bei Domänenereignissen fehlende Teile einer Regel
-wieder her (Tokenprüfung, aktivierte Required Action) ohne bestehende Clients wieder zu aktivieren. Eine Migration alter Prototyp-Flows ist im eigenständigen IdP-Modul nicht enthalten.
+wieder her (Tokenprüfung, aktivierte Required Action). Eine Migration alter Prototyp-Flows ist im eigenständigen IdP-Modul nicht enthalten.
 
 Keine Änderung an `ns8-agent`, dessen Secret oder den AD-Servicekonten nötig.
 Die Anwendung hat keine Berechtigung, `alter-realm-client` aufzurufen; sie kann
@@ -229,10 +233,46 @@ Für diesen Client eine Access-Token-Laufzeit von mindestens 10 Minuten
 verwenden (Vaultwarden-Upstream-Empfehlung für Keycloak). Das Vaultwarden-Modul
 fordert bei der Registrierung über den optionalen `register-client`-Parameter
 `access_token_lifespan` 600 Sekunden an; andere Clients behalten den
-Realm-Standard. Nach einem Gruppenentzug laufen bestehende Vaultwarden-Sitzungen
-höchstens bis zum Ablauf dieses Tokens weiter, die Erneuerung wird abgelehnt.
-Die SSO-/Client-Sitzungslaufzeiten des Realms bestimmen die reguläre erneute
-Anmeldung.
+Realm-Standard. Die SSO-/Client-Sitzungslaufzeiten des Realms bestimmen die
+reguläre erneute Anmeldung.
+
+### Widerruf bestehender Sitzungen
+
+Der IdP verweigert Nichtmitgliedern sofort neue Anmeldungen und
+Token-Erneuerungen; eine bereits laufende Vaultwarden-Sitzung würde ohne
+weiteres Zutun bis zum Ablauf des IdP-Tokens (600 Sekunden) bestehen. Der
+Benutzer-Timer `vaultwarden-revoke.timer` des Moduls gleicht deshalb alle zwei
+Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
+
+- Konten, deren `mail` nicht mehr zu einem aktivierten, direkten Mitglied der
+  Gruppe gehört, werden in Vaultwarden deaktiviert. Das löscht alle Geräte des
+  Kontos, setzt den Security-Stamp zurück und meldet verbundene Clients ab.
+- Wird der Benutzer wieder Mitglied, aktiviert der Timer das Konto erneut. Von
+  einem Administrator deaktivierte Konten bleiben deaktiviert
+  (`revoked-users.json` im Modul-State merkt sich die vom Timer gesperrten).
+- Ist das AD nicht erreichbar oder fehlt die Gruppe, ändert der Timer nichts
+  und protokolliert einen Fehler; neue Anmeldungen verweigert dann der IdP.
+
+Der Timer nutzt die Vaultwarden-Admin-API über den Loopback-Port des Moduls
+mit einem zufälligen `ADMIN_TOKEN` in `vaultwarden.env` (nur dort, Modus 0600).
+Traefik lässt `/admin` über eine eigene Route nur für `127.0.0.1` zu und
+antwortet allen anderen mit 403. Vaultwarden protokolliert beim Start eine
+Warnung, weil der Token nicht als Argon2-Hash hinterlegt ist.
+
+```bash
+runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden-revoke.timer
+runagent -m vaultwarden-reworked1 journalctl --user -u vaultwarden-revoke.service
+```
+
+**Offline-Tresore lassen sich nicht serverseitig deaktivieren.** Die
+Bitwarden-Clients halten eine verschlüsselte Kopie des Tresors, die sich mit
+dem Masterpasswort auch ohne Server entsperren lässt. Ein abgemeldeter Client
+löscht seine lokalen Daten erst, wenn er sich wieder mit dem Server verbindet.
+Vaultwarden 1.37.2 unterstützt die Bitwarden-Richtlinie für eine maximale
+Tresor-Zeitüberschreitung mit Abmeldung nicht (Richtlinientyp 9, im Quellcode
+als nicht unterstützt markiert), mit der Clients ihre Kopie nach einer Frist
+selbst verwerfen würden. Ein Fernlöschen gibt es nicht. Nach einem Entzug
+deshalb die Zugangsdaten ändern, die der Benutzer kannte.
 
 ## 7. Android einrichten und Zugriff prüfen
 
@@ -258,11 +298,10 @@ Vor Freigabe prüfen:
 6. Ein anderer Anwendungsclient desselben Realms bleibt unabhängig zugänglich.
 
 Der lokale Protokolltest deckt den mobilen Callback und Token-Austausch ab,
-keinen physischen Android-/Biometrietest. Bereits heruntergeladene Tresore und
-noch gültige signierte Vaultwarden-Access-Tokens können nicht durch eine
-bloße AD-Gruppenänderung sofort gelöscht bzw. überall sofort gesperrt werden.
-Neue OIDC-Autorisierungen, Code-Einlösungen und Token-Erneuerungen werden mit
-der aktuellen Mitgliedschaft geprüft.
+keinen physischen Android-/Biometrietest. Neue OIDC-Autorisierungen,
+Code-Einlösungen und Token-Erneuerungen werden mit der aktuellen Mitgliedschaft
+geprüft; bestehende Sitzungen beendet der Widerruf-Timer innerhalb von zwei
+Minuten. Bereits heruntergeladene Offline-Tresore bleiben auf den Geräten.
 
 ## Backup und Restore im Prototyp
 
@@ -271,7 +310,7 @@ Datenvolume als konsistenten Snapshot und startet den Dienst auch bei einem
 Exportfehler wieder. NS8 sichert den Snapshot und die privaten Einstellungen.
 `module-cleanup-state` entfernt den temporären Snapshot nach dem Backup.
 
-Beim Restore bleibt der Dienst deaktiviert: die neue Modul-ID muss mit
+Beim Restore bleiben Dienst und Widerruf-Timer deaktiviert: die neue Modul-ID muss mit
 `prepare-sso`, administrativer Gruppenregel und `configure-module` erneut
 registriert werden. Kein Start mit unkontrolliert übernommenen Credentials.
 Vollständigen Cluster-Disaster-Recovery vor produktivem Einsatz separat prüfen.
