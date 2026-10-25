@@ -1,0 +1,9 @@
+[Unit]
+Description=Revoke the Vaultwarden access of users outside the AD group
+After=vaultwarden.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%E/state
+ExecStart=/usr/local/bin/runagent revoke-access
+SyslogIdentifier=%u

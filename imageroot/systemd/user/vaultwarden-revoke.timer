@@ -1,0 +1,12 @@
+# Users who left the AD group are logged out of Vaultwarden within this
+# interval; the IdP denies their new logins and token refreshes at once.
+
+[Unit]
+Description=Revoke the Vaultwarden access of users outside the AD group every 2 minutes
+
+[Timer]
+OnActiveSec=1min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

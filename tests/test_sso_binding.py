@@ -28,7 +28,8 @@ class BindingTests(unittest.TestCase):
         try:
             with patch.dict(sys.modules,{'agent':agent,'agent.tasks':tasks}):
                 spec.loader.exec_module(module)
-                with patch.object(module.policy,'private_write'):
+                with patch.object(module.policy,'private_write'), \
+                        patch.object(module.policy,'admin_token',return_value='t'*64):
                     module.prepare({'host':'vault.test','domain':'ad.test','idp_module':'idp1'})
         finally:
             sys.path.pop(0)

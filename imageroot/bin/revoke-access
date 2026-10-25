@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+# Run by vaultwarden-revoke.timer: disable the Vaultwarden accounts of the
+# users that left the AD group, see vaultwarden_revoke.
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'pypkg'))
+import vaultwarden_revoke as revoke
+
+if subprocess.run(['systemctl', '--user', '-q', 'is-active', 'vaultwarden.service']).returncode != 0:
+    # Not configured yet, or stopped: nothing can sign in
+    sys.exit(0)
+try:
+    with open('settings.json') as f:
+        config = json.load(f)
+    members = revoke.group_member_mails(revoke.domain_settings(config['domain']), config['required_group'])
+    api = revoke.AdminAPI('http://127.0.0.1:' + os.environ['TCP_PORT'], revoke.read_admin_token())
+    report = revoke.reconcile(api, members)
+except revoke.RevokeError as error:
+    # Accounts handled before the error stay as they are, and the next run
+    # goes on; the IdP still denies logins and token refreshes
+    print(f'Vaultwarden access revocation failed: {error}', file=sys.stderr)
+    sys.exit(1)
+if report['disabled'] or report['enabled']:
+    print('Vaultwarden access revocation: ' + json.dumps(report), file=sys.stderr)

@@ -76,6 +76,24 @@ Activate application and verify private settings
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
 
+Revocation timer and private admin pages
+    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    # Traefik allows the admin pages to the loopback address only: connect
+    # from the node address
+    ${ip} =    Execute Command    hostname -I | awk '{print $1}'
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin
+    Should Be Equal    ${code}    403
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/alive
+    Should Be Equal    ${code}    200
+    # The timer service binds to LDAP and logs in to the admin API
+    ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user start vaultwarden-revoke.service    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${err}
+    ${rc} =    Execute Command    runagent -m ${APP} test -s admin-session    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
 Concurrent IdP reconciliation and reconfiguration
     SSHLibrary.Put File    ${CURDIR}/check_reconfigure.sh    /tmp/vaultwarden-reconfigure-test.sh
     ${rc} =    Execute Command    bash /tmp/vaultwarden-reconfigure-test.sh ${IDP} ${APP} ${APP_HOST} ${DOMAIN}    return_rc=True    return_stdout=False
