@@ -1,6 +1,6 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 25.10.2026. Vorabversion **0.1.0-rc.2**, vorbereitet und noch nicht veröffentlicht; zuletzt veröffentlicht ist 0.1.0-rc.1 ([Prüfnachweise und Digests](RELEASE-0.1.0-rc.1.md)). Diese Anleitung beschreibt rc.2; die gemeinsame NS8-Prüfung von rc.2 erfolgt im Release-Workflow. Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
+Stand: 26.10.2026. Veröffentlichte Vorabversion **0.1.0-rc.2**. Beide eigenständigen Pakete wurden auf NS8 Core 3.23.2 unter Debian 13 und Rocky 9 gemeinsam geprüft, jeweils 10/10 Tests. [Release-Prüfnachweise und Digests](RELEASE-0.1.0-rc.2.md). Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
