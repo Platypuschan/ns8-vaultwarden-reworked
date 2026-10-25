@@ -35,7 +35,15 @@ jobs:
           base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           tag="candidate-${GITHUB_SHA:0:12}"
           printf '%s' "$GH_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          podman build --layers -t "$base/vaultwarden-reworked-server:$tag" -f prototype/vaultwarden/Containerfile prototype/vaultwarden
+          # Reuse only a pinned CI-built binary with this exact recipe/patch hash.
+          recipe="$(.github/scripts/runtime-tag)"
+          if [[ -f runtime-cache.json && "$recipe" == "$(jq -r '.recipe' runtime-cache.json)" ]]; then
+            cache_image="$(jq -r '.image' runtime-cache.json)"
+            podman pull "$cache_image"
+            podman tag "$cache_image" "$base/vaultwarden-reworked-server:$tag"
+          else
+            podman build --layers -t "$base/vaultwarden-reworked-server:$tag" -f prototype/vaultwarden/Containerfile prototype/vaultwarden
+          fi
           podman push "$base/vaultwarden-reworked-server:$tag"
           digest="$(skopeo inspect "docker://$base/vaultwarden-reworked-server:$tag" --format '{{.Digest}}')"
           [[ "$digest" == sha256:* ]] || exit 65

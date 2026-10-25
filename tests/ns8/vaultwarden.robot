@@ -27,7 +27,7 @@ Policy is enforced
 
 *** Test Cases ***
 Install reworked modules
-    ${idp_image} =    Get File    ${CURDIR}/../../IDP_IMAGE
+    ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
     ${idp_image} =    Evaluate    $idp_image.strip()
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
