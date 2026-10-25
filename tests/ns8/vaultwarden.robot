@@ -1,5 +1,6 @@
 *** Settings ***
 Library    SSHLibrary
+Library    OperatingSystem
 Resource    api.resource
 
 *** Variables ***
@@ -25,8 +26,9 @@ Policy is enforced
     Should Be Empty    ${policy['issues']}
 
 *** Test Cases ***
-Install prototype modules
-    ${idp_image} =    Evaluate    $IMAGE_URL.replace('/vaultwarden:', '/idp-vaultwarden-prototype:')
+Install reworked modules
+    ${idp_image} =    Get File    ${CURDIR}/../../IDP_IMAGE
+    ${idp_image} =    Evaluate    $idp_image.strip()
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast

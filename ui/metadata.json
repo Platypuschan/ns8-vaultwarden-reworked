@@ -1,8 +1,21 @@
 {
-  "name": "vaultwarden",
-  "description": {"en":"Vaultwarden SSO-only prototype; configure via API", "de":"Vaultwarden-Prototyp mit AD-Gruppenfilter; Konfiguration per API"},
-  "categories": ["security"],
-  "authors": [{"name":"Platypuschan"}],
-  "source":"ghcr.io/platypuschan/vaultwarden",
-  "docs": {"documentation_url":"https://github.com/Platypuschan/ns8-vaultwarden/blob/codex/vaultwarden-sso/docs/INSTALL-IDP.md", "bug_url":"https://github.com/Platypuschan/ns8-vaultwarden/issues", "code_url":"https://github.com/Platypuschan/ns8-vaultwarden"}
+  "name": "Vaultwarden Reworked (preview)",
+  "description": {
+    "en": "Vaultwarden SSO-only prototype; configure via API",
+    "de": "Vaultwarden-Prototyp mit AD-Gruppenfilter; Konfiguration per API"
+  },
+  "categories": [
+    "security"
+  ],
+  "authors": [
+    {
+      "name": "Platypuschan"
+    }
+  ],
+  "source": "ghcr.io/platypuschan/vaultwarden-reworked",
+  "docs": {
+    "documentation_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/blob/main/docs/INSTALL-IDP.md",
+    "bug_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/issues",
+    "code_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked"
+  }
 }

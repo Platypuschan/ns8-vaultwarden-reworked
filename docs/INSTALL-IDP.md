@@ -1,6 +1,6 @@
-# ns8-idp und Vaultwarden mit Samba-AD-Gruppenfilter
+# IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 24.10.2026. Diese Anleitung beschreibt den **Prototyp dieses Branches**.
+Stand: 25.10.2026. Vorbereitete Vorabversion **0.1.0-rc.1**. Veröffentlichung und gemeinsame Paketprüfung stehen noch aus; die historische Prototyp-Prüfung ist kein Testnachweis für die neu benannten Pakete.
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
@@ -39,29 +39,17 @@ können (passendes internes DNS oder funktionierendes NAT-Loopback).
 Die interne AD-Domäne wird nicht als öffentliches LDAP/AD freigegeben. Die
 Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 
-## 2. Getestete Prototyp-Images festlegen
+## 2. Zusammengehörige Vorabversionen festlegen
 
-Die QEMU-Pipeline dieses Repositorys baut vier zusammengehörige Images mit
-`prototype-<12-stellige Commit-SHA>`. Den erfolgreich geprüften Lauf aus
-[TESTING.md](TESTING.md) auswählen; **kein unbestimmtes `latest` verwenden**.
-Das Paket ist kein Katalog-/Stable-Release.
+Nach Veröffentlichung beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-# Auf Debian 13 und Rocky 9 / Core 3.23.2 geprüfter Stand, siehe TESTING.md.
-VW_PROTOTYPE_TAG='prototype-0dd673332309'
-VW_IDP_IMAGE="ghcr.io/platypuschan/idp-vaultwarden-prototype:${VW_PROTOTYPE_TAG}"
-VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden:${VW_PROTOTYPE_TAG}"
+VW_VERSION='0.1.0-rc.1'
+VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_VERSION}"
+VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
 ```
 
-Das Vaultwarden-Modulpaket verweist auf `vaultwarden-server` desselben Tags.
-Dieser Runtime-Prototyp enthält einen gezielten Upstream-Patch: auch persönliche
-API-Keys dürfen bei SSO-only keinen neuen Geräte-Login erzeugen. Das originale
-`vaultwarden/server:1.37.2` allein würde diesen Weg weiterhin erlauben. API-Key-
-Automationen/Organisations-API-Key-Login sind in diesem Modus daher gesperrt.
-
-Das IdP-Modulpaket verweist auf das zum selben Stand gehörende
-`ghcr.io/platypuschan/idp-keycloak`-Image. Dieses enthält den zusätzlichen
-Gruppenprüfer und behält die ursprünglichen NS8-Provider bei.
+Die Vaultwarden-Runtime enthält den SSO-only-Patch gegen persönliche API-Key-Gerätelogins. Die IdP-Runtime enthält die ursprünglichen NS8-Provider und den Client-Gruppenprüfer. Kein `latest`, kein Stable-/Katalogrelease. Vor einer Installation müssen beide Modul- und Runtime-Pakete anonym abrufbar sein.
 
 ## 3. IdP auf Knoten 1 installieren und HTTPS konfigurieren
 
@@ -69,13 +57,13 @@ Gruppenprüfer und behält die ursprünglichen NS8-Provider bei.
 add-module "$VW_IDP_IMAGE" 1
 ```
 
-Im Beispiel lautet die zurückgegebene ID `idp-vaultwarden-prototype1`:
+Im Beispiel lautet die zurückgegebene ID `idp-reworked1`:
 
 ```bash
-api-cli run module/idp-vaultwarden-prototype1/configure-module --data \
+api-cli run module/idp-reworked1/configure-module --data \
   '{"host":"sso.example.com","lets_encrypt":true}'
 
-api-cli run module/idp-vaultwarden-prototype1/get-configuration
+api-cli run module/idp-reworked1/get-configuration
 ```
 
 Danach müssen der HTTPS-Hostname und das Zertifikat stimmen:
@@ -99,11 +87,11 @@ entwickelt; bestehende Realms und Anwendungen vorher inventarisieren/sichern.
 add-module "$VW_APP_IMAGE" 1
 ```
 
-Zurückgegebene ID im Beispiel: `vaultwarden1`.
+Zurückgegebene ID im Beispiel: `vaultwarden-reworked1`.
 
 ```bash
-api-cli run module/vaultwarden1/prepare-sso --data \
-  '{"host":"vaultwarden.example.com","domain":"ad.example.com","idp_module":"idp-vaultwarden-prototype1","required_group":"services_vaultwarden","lets_encrypt":true}'
+api-cli run module/vaultwarden-reworked1/prepare-sso --data \
+  '{"host":"vaultwarden.example.com","domain":"ad.example.com","idp_module":"idp-reworked1","required_group":"services_vaultwarden","lets_encrypt":true}'
 ```
 
 Diese Aktion bindet das Modul an die vorhandene NS8-Domäne und registriert den
@@ -114,7 +102,7 @@ nicht. Damit entsteht nicht versehentlich ein Dienst ohne angewendeten Filter.
 | OIDC-Eigenschaft | Wert |
 |---|---|
 | Realm | `ad.example.com` |
-| Client-ID | tatsächliche Vaultwarden-Modul-ID, hier `vaultwarden1` |
+| Client-ID | tatsächliche Vaultwarden-Modul-ID, hier `vaultwarden-reworked1` |
 | Issuer | `https://sso.example.com/realms/ad.example.com` |
 | Callback | `https://vaultwarden.example.com/identity/connect/oidc-signin` |
 | Discovery | Issuer + `/.well-known/openid-configuration` |
@@ -131,11 +119,11 @@ deren `mail`-Attribut prüfen. Der Pfad bezeichnet die von Keycloak importierte
 AD-Gruppe, keine Vaultwarden-Organisation und keinen OIDC-Scope.
 
 ```bash
-api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden1","access_group":"services_vaultwarden"}'
+api-cli run module/idp-reworked1/alter-realm-client --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","access_group":"services_vaultwarden"}'
 
-api-cli run module/idp-vaultwarden-prototype1/get-client-access --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden1"}'
+api-cli run module/idp-reworked1/get-client-access --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1"}'
 ```
 
 Erwartet werden `enforced:true`, `enabled:true`, `issues:[]` und
@@ -149,8 +137,7 @@ Was sich gegenüber dem ersten Prototyp geändert hat:
 - Kein eigener Anmeldeflow pro Client. Keycloak wertet die Required Action nach
   jeder Anmeldung aus: Passwort, vorhandene SSO-Sitzung und Anmeldung über einen
   federierten IdP (z. B. Entra ID). Login-Modus `federated`, Passwortsperre
-  federierter Konten und spätere MFA-Änderungen am Realm-Flow gelten damit
-  automatisch auch für Vaultwarden.
+  federierter Konten bleiben erhalten. Künftige MFA-Szenarien benötigen eigene Kompatibilitätstests.
 - Der LDAP-Benutzercache bleibt eingeschaltet. Die Prüfung entfernt nur den
   anmeldenden Benutzer aus dem Cache und liest seine Gruppen live aus LDAP.
 - Auch eine schreibbare Federation (Realm mit federiertem IdP) wird
@@ -160,12 +147,12 @@ Was sich gegenüber dem ersten Prototyp geändert hat:
 Regel wieder entfernen (die Tokenprüfung wird mit entfernt):
 
 ```bash
-api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden1","access_group":null}'
+api-cli run module/idp-reworked1/alter-realm-client --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","access_group":null}'
 ```
 
 Wird die AD-Gruppe umbenannt oder gelöscht, kann sich niemand mehr anmelden;
-`get-client-access` meldet dann `group_not_found`. Regel mit dem neuen Namen
+die strukturelle Statusabfrage kann bei noch importierter Gruppe dennoch `enforced:true` melden; echte Anmeldungen werden trotzdem verweigert. Regel mit dem neuen Namen
 erneut setzen. Nach dem Entfernen des Vaultwarden-Moduls löscht der IdP den
 Client samt Regel. Eine Neuinstallation mit gleicher Modul-ID braucht die Regel
 erneut, Vaultwarden startet vorher nicht.
@@ -176,13 +163,12 @@ aktivieren. Nach erfolgreicher Reparatur lässt sich der Client administrativ
 wieder aktivieren:
 
 ```bash
-api-cli run module/idp-vaultwarden-prototype1/alter-realm-client --data \
-  '{"domain":"ad.example.com","client_id":"vaultwarden1","enabled":true}'
+api-cli run module/idp-reworked1/alter-realm-client --data \
+  '{"domain":"ad.example.com","client_id":"vaultwarden-reworked1","enabled":true}'
 ```
 
 Der IdP stellt beim Start und bei Domänenereignissen fehlende Teile einer Regel
-wieder her (Tokenprüfung, aktivierte Required Action) und übernimmt Regeln des
-ersten Prototyps; dessen Client-Flows werden dabei entfernt.
+wieder her (Tokenprüfung, aktivierte Required Action) ohne bestehende Clients wieder zu aktivieren. Eine Migration alter Prototyp-Flows ist im eigenständigen IdP-Modul nicht enthalten.
 
 Keine Änderung an `ns8-agent`, dessen Secret oder den AD-Servicekonten nötig.
 Die Anwendung hat keine Berechtigung, `alter-realm-client` aufzurufen; sie kann
@@ -191,10 +177,10 @@ nur ihre eigene Regel mit `get-client-access` lesen.
 ## 6. Vaultwarden aktivieren
 
 ```bash
-api-cli run module/vaultwarden1/configure-module --data \
-  '{"host":"vaultwarden.example.com","domain":"ad.example.com","idp_module":"idp-vaultwarden-prototype1","required_group":"services_vaultwarden","lets_encrypt":true}'
+api-cli run module/vaultwarden-reworked1/configure-module --data \
+  '{"host":"vaultwarden.example.com","domain":"ad.example.com","idp_module":"idp-reworked1","required_group":"services_vaultwarden","lets_encrypt":true}'
 
-api-cli run module/vaultwarden1/get-configuration
+api-cli run module/vaultwarden-reworked1/get-configuration
 
 curl --fail --silent --show-error https://vaultwarden.example.com/alive
 ```
@@ -204,8 +190,8 @@ nicht zur konfigurierten Gruppe passt. Der Dienst läuft im **Benutzer-systemd-
 Kontext des Moduls**, nicht als Systemdienst `vaultwarden.service` des Hosts:
 
 ```bash
-runagent -m vaultwarden1 systemctl --user status vaultwarden.service
-runagent -m vaultwarden1 podman ps
+runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden.service
+runagent -m vaultwarden-reworked1 podman ps
 ```
 
 Die dauerhafte Konfiguration liegt in `settings.json` und `vaultwarden.env`

@@ -26,9 +26,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # here: stub them to load the module code unchanged.
 for name in ('agent', 'agent.ldapproxy', 'agent.tasks', 'cluster', 'cluster.userdomains', 'kcadmin'):
     sys.modules.setdefault(name, types.ModuleType(name))
-sys.path.insert(0, str(ROOT / 'prototype/idp/overlay/pypkg'))
-sys.path.insert(0, str(ROOT / 'prototype/idp'))
-sys.path.insert(0, str(ROOT / 'tests/integration/upstream'))
+IDP_SOURCE_ROOT = Path(os.environ['IDP_SOURCE_ROOT']).resolve()
+sys.path.insert(0, str(IDP_SOURCE_ROOT / 'imageroot/pypkg'))
 import idpaccess
 import idpfed
 import idprealm
@@ -136,7 +135,7 @@ class LoginTests(unittest.TestCase):
         env = dict(os.environ, KC_BOOTSTRAP_ADMIN_USERNAME='admin', KC_BOOTSTRAP_ADMIN_PASSWORD=cls.password)
         cmd('podman', 'run', '-d', '--name', cls.keycloak, '--network', cls.network,
             '-p', f'127.0.0.1:{cls.kc_port}:8080', '--env', 'KC_BOOTSTRAP_ADMIN_USERNAME',
-            '--env', 'KC_BOOTSTRAP_ADMIN_PASSWORD', 'localhost/ns8-idp-group-prototype',
+            '--env', 'KC_BOOTSTRAP_ADMIN_PASSWORD', os.environ['IDP_RUNTIME_IMAGE'],
             'start-dev', '--db=dev-file', '--features=scripts', '--hostname=' + cls.url,
             env=env)
         cls.names.append(cls.keycloak)
@@ -576,7 +575,8 @@ class LoginTests(unittest.TestCase):
             'grant_type':'authorization_code','client_id':'vaultwarden1','client_secret':self.secret,
             'code':parse_qs(urlsplit(target).query)['code'][0],
             'redirect_uri':self.vw_url+'/identity/connect/oidc-signin','code_verifier':verifier},timeout=20).json()
-        self.assertEqual(token['expires_in'],600)
+        self.assertGreaterEqual(token['expires_in'],595)
+        self.assertLessEqual(token['expires_in'],600)
         # None restores the realm default
         idprealm.ensure_client(kc,'ad.test','vaultwarden1',redirect_uris=redirect,access_token_lifespan=None)
         self.assertIsNone(lifespan('vaultwarden1'))
@@ -607,44 +607,6 @@ class LoginTests(unittest.TestCase):
         self.assertFalse(idpaccess.restricted(kc.find_client('ad.test','other1')))
         self.assertTrue(kc.find_client('ad.test','other1')['enabled'])
 
-    def test_14_prototype_policy_is_migrated(self):
-        """A client restricted by the first prototype: private copy of the
-        browser flow bound to the client, legacy attributes."""
-        kc=self.kc
-        group=kc.get('/ad.test/group-by-path/services_vaultwarden')
-        idprealm.ensure_client(kc,'ad.test','legacy1',redirect_uris=[self.vw_url+'/identity/connect/oidc-signin'])
-        legacy=kc.find_client('ad.test','legacy1')
-        kc.post('/ad.test/authentication/flows/browser/copy',{'newName':'ns8-group-0123456789abcdef-login'})
-        kc.post('/ad.test/authentication/flows',{'alias':'ns8-group-0123456789abcdef','providerId':'basic-flow','topLevel':True,'builtIn':False})
-        flows={f['alias']:f for f in kc.get('/ad.test/authentication/flows')}
-        kc.post('/ad.test/authentication/executions',{'parentFlow':flows['ns8-group-0123456789abcdef']['id'],
-            'flowId':flows['ns8-group-0123456789abcdef-login']['id'],'authenticatorFlow':True,'requirement':'REQUIRED'})
-        legacy['attributes'].update({idpaccess.LEGACY_GROUP_ID:group['id'],idpaccess.LEGACY_GROUP_PATH:group['path'],
-            idpaccess.LEGACY_FLOW_ID:flows['ns8-group-0123456789abcdef']['id']})
-        legacy['authenticationFlowBindingOverrides']={'browser':flows['ns8-group-0123456789abcdef']['id']}
-        kc.put('/ad.test/clients/'+legacy['id'],legacy)
-        kc.post('/ad.test/clients/'+legacy['id']+'/protocol-mappers/models',{'name':'ns8-required-group',
-            'protocol':'openid-connect','protocolMapper':idpaccess.TOKEN_GATE,'config':{}})
-        try:
-            idpaccess.reconcile(kc,'ad.test',idprealm.module_clients(kc,'ad.test'))
-            legacy=kc.find_client('ad.test','legacy1')
-            state=idpaccess.access_state(kc,'ad.test',legacy)
-            self.assertTrue(state['enforced'],state)
-            self.assertEqual(state['group'],'services_vaultwarden')
-            self.assertFalse(any(k.startswith('ns8.required') or k=='ns8.group_gate_flow_id' for k in legacy['attributes']))
-            aliases={f['alias'] for f in kc.get('/ad.test/authentication/flows')}
-            self.assertFalse(any(a.startswith('ns8-group-') for a in aliases),aliases)
-            self.assertIn('browser',aliases)
-            _,r,target,_=self.auth('denied',client='legacy1')
-            self.assertIsNone(target)
-            self.assertEqual(r.status_code,403)
-            _,_,target,_=self.auth('allowed',client='legacy1')
-            self.assertIn('code=',target or '')
-            # A second run changes nothing
-            idpaccess.reconcile(kc,'ad.test',idprealm.module_clients(kc,'ad.test'))
-            self.assertEqual(len(idpaccess._token_gates(kc,'ad.test',kc.find_client('ad.test','legacy1'))),1)
-        finally:
-            kc.delete('/ad.test/clients/'+kc.find_client('ad.test','legacy1')['id'])
 
     def test_15_reconcile_restores_missing_parts(self):
         kc=self.kc

@@ -1,64 +1,8 @@
-name: NS8 prototype on QEMU
+name: Historical prototype (disabled)
 on:
-  push:
-    branches: [codex/vaultwarden-sso, claude/idp-upstream-integration]
-    paths:
-      - '.github/workflows/ns8-prototype.yml'
-      - 'Containerfile'
-      - 'imageroot/**'
-      - 'prototype/**'
-      - 'tests/ns8/**'
-      - 'test-module*.sh'
-      - '.github/scripts/**'
   workflow_dispatch:
-permissions:
-  contents: read
 jobs:
-  build:
+  notice:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      app: ${{ steps.images.outputs.app }}
-      tag: ${{ steps.images.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Build and push isolated prototype images
-        id: images
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          tag="prototype-${GITHUB_SHA:0:12}"
-          base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
-          printf '%s' "$GH_TOKEN" | podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          podman build --layers -t "$base/idp-keycloak:$tag" -f prototype/idp/Containerfile prototype/idp
-          podman build --layers -t "$base/idp-vaultwarden-prototype:$tag" --build-arg "KEYCLOAK_IMAGE=$base/idp-keycloak:$tag" -f prototype/idp/Module.Containerfile .
-          runtime_tag="$(.github/scripts/runtime-tag)"
-          .github/scripts/build-runtime "$base/vaultwarden-server:$tag" "$base/vaultwarden-server:$runtime_tag"
-          podman tag "$base/vaultwarden-server:$tag" "$base/vaultwarden-server:$runtime_tag"
-          podman push "$base/vaultwarden-server:$runtime_tag"
-          podman build --layers -t "$base/vaultwarden:$tag" --build-arg "VAULTWARDEN_IMAGE=$base/vaultwarden-server:$tag" -f Containerfile .
-          for image in idp-keycloak idp-vaultwarden-prototype vaultwarden-server vaultwarden; do
-            podman push "$base/$image:$tag"
-          done
-          printf 'app=%s/vaultwarden:%s\ntag=%s\n' "$base" "$tag" "$tag" >> "$GITHUB_OUTPUT"
-  qemu:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        distro: [debian13, rocky9]
-    permissions:
-      contents: read
-      statuses: write
-    uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
-    with:
-      distro: ${{ matrix.distro }}
-      image_url: ${{ needs.build.outputs.app }}
-      repo_ref: ${{ github.sha }}
-      version_tag: ${{ needs.build.outputs.tag }}
-      install_args: ghcr.io/nethserver/core:3.23.2
-      script: test-module-install.sh
-      timeout_minutes: 60
+      - run: echo "Use the Prepare prerelease workflow for the independent reworked modules."

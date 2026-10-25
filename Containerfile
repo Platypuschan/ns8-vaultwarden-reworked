@@ -2,9 +2,9 @@ FROM scratch
 COPY imageroot /imageroot
 COPY ui /ui
 ENTRYPOINT ["/"]
-ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-server:codex-vaultwarden-sso
-LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden" \
-      org.nethserver.authorizations="traefik@node:routeadm cluster:accountconsumer idp@any:clientadm idp-vaultwarden-prototype@any:clientadm" \
+ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-reworked-server:0.1.0-rc.1
+LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden-reworked" \
+      org.nethserver.authorizations="traefik@node:routeadm cluster:accountconsumer idp-reworked@any:clientadm" \
       org.nethserver.tcp-ports-demand="1" \
       org.nethserver.rootfull="0" \
       org.nethserver.min-core="3.23.2" \

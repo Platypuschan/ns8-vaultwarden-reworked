@@ -1,0 +1,119 @@
+name: Prepare prerelease
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.images.outputs.image }}
+      runtime: ${{ steps.images.outputs.runtime }}
+      candidate: ${{ steps.images.outputs.candidate }}
+      version: ${{ steps.images.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests jsonschema
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: python3 tests/check_syntax.py
+      - run: sudo apt-get update && sudo apt-get install -y podman skopeo
+      - name: Build isolated candidate images
+        id: images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || exit 64
+          base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          tag="candidate-${GITHUB_SHA:0:12}"
+          printf '%s' "$GH_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          podman build --layers -t "$base/vaultwarden-reworked-server:$tag" -f prototype/vaultwarden/Containerfile prototype/vaultwarden
+          podman push "$base/vaultwarden-reworked-server:$tag"
+          digest="$(skopeo inspect "docker://$base/vaultwarden-reworked-server:$tag" --format '{{.Digest}}')"
+          [[ "$digest" == sha256:* ]] || exit 65
+          podman build --layers -t "$base/vaultwarden-reworked:$tag" --build-arg "VAULTWARDEN_IMAGE=$base/vaultwarden-reworked-server@$digest" -f Containerfile .
+          podman push "$base/vaultwarden-reworked:$tag"
+          printf 'image=%s/vaultwarden-reworked:%s\nruntime=%s/vaultwarden-reworked-server\ncandidate=%s\nversion=%s\n' "$base" "$tag" "$base" "$tag" "$version" >> "$GITHUB_OUTPUT"
+  protocol:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - id: refs
+        run: echo "idp=$(cat IDP_REF)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: Platypuschan/ns8-idp-reworked
+          ref: ${{ steps.refs.outputs.idp }}
+          path: .test-idp
+      - run: pip install requests
+      - run: sudo apt-get update && sudo apt-get install -y podman skopeo
+      - run: podman build -t localhost/ns8-vaultwarden-test-samba -f tests/integration/Samba.Containerfile tests/integration
+      - name: Verify the independent IdP with the patched application
+        env:
+          RUNTIME_REPO: ${{ needs.build.outputs.runtime }}
+          CANDIDATE: ${{ needs.build.outputs.candidate }}
+        run: |
+          set -Eeuo pipefail
+          idp="$(cat IDP_IMAGE)"
+          runtime="$(skopeo inspect --config "docker://$idp" | jq -r '.config.Labels["org.nethserver.images"] | split(" ")[0]')"
+          IDP_SOURCE_ROOT="$PWD/.test-idp" IDP_RUNTIME_IMAGE="$runtime" VW_RUNTIME_IMAGE="$RUNTIME_REPO:$CANDIDATE" python3 tests/integration/run.py
+  qemu:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian13, rocky9]
+    permissions:
+      contents: read
+      statuses: write
+    uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
+    with:
+      distro: ${{ matrix.distro }}
+      image_url: ${{ needs.build.outputs.image }}
+      repo_ref: ${{ github.sha }}
+      version_tag: ${{ needs.build.outputs.candidate }}
+      install_args: ghcr.io/nethserver/core:3.23.2
+      script: test-module-install.sh
+  publish:
+    needs: [build, protocol, qemu]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Promote tested digests and create the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          RUNTIME: ${{ needs.build.outputs.runtime }}
+          CANDIDATE: ${{ needs.build.outputs.candidate }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          # Inspect all destination tags before copying anything. Existing versions are immutable.
+          for destination in "${IMAGE%:*}:$VERSION" "$RUNTIME:$VERSION"; do
+            error="$(mktemp)"
+            if skopeo inspect "docker://$destination" >/dev/null 2>"$error"; then
+              echo "Refusing to overwrite $destination" >&2; exit 1
+            fi
+            grep -qiE 'manifest unknown|name unknown' "$error" || { cat "$error" >&2; exit 1; }
+          done
+          for pair in "$IMAGE|${IMAGE%:*}:$VERSION" "$RUNTIME:$CANDIDATE|$RUNTIME:$VERSION"; do
+            source="${pair%|*}"; destination="${pair#*|}"
+            digest="$(skopeo inspect "docker://$source" --format '{{.Digest}}')"
+            skopeo copy --preserve-digests "docker://${source%:*}@$digest" "docker://$destination"
+          done
+          gh release create "$VERSION" --target "$GITHUB_SHA" --prerelease --title "vaultwarden-reworked $VERSION" --notes-file RELEASE_NOTES.md
