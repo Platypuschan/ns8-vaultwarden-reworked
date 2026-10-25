@@ -15,3 +15,5 @@ Reihenfolge: zuerst IdP, anschließend Vaultwarden. Neue GHCR-Pakete gegebenenfa
 IdP-QEMU führt die bestehende Realm-/Federation-/Entfernungs-Suite als Neuinstallation aus. Vaultwarden-QEMU verwendet die installierte IdP-RC und prüft beide eigenständigen Pakete gemeinsam. Kein künstliches Upgrade vom fremden Originalpaket.
 
 Die Release-Notizen sind keine Behauptung bereits abgeschlossener RC-Tests. Historische Testberichte und neue lokale Prüfungen werden getrennt dokumentiert.
+
+Die gemeinsame NS8-Suite verwendet einen per Digest gepinnten Python-/SSH-Runner ohne Browserpakete. So bleibt auf GitHub-Runnern Speicherplatz für QEMU und die Modulimages. Der Runner meldet vor dem Test den freien Hostspeicher.

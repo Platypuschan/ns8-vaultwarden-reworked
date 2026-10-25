@@ -12,7 +12,8 @@ IMAGE_URL="${2:?missing module image URL}"
 SCENARIO="${3:?missing test scenario}"
 PREVIOUS_IMAGE_URL="${PREVIOUS_IMAGE_URL:-}"
 SSH_KEYFILE="${SSH_KEYFILE:-${HOME}/.ssh/id_ecdsa}"
-RUNNER_IMAGE="ghcr.io/marketsquare/robotframework-browser/rfbrowser-stable:19.11.0"
+# SSH-only suite: browser runtimes exhaust disk space beside the QEMU guest.
+RUNNER_IMAGE="docker.io/library/python@sha256:d879ed88565a7a3c614b980b369d4a5025a9d057b71f93d09fc6d0b2ca823a18"
 CONTAINER_NAME="rf-vaultwarden-${SCENARIO}"
 
 case "${SCENARIO}" in
@@ -43,6 +44,8 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "tests/outputs/${SCENARIO}"
+df -h .
+
 
 set +e
 podman run --interactive \
@@ -59,10 +62,11 @@ podman run --interactive \
 set -Eeuo pipefail
 
 umask 077
+mkdir -p /home/pwuser/outputs
 printf '%s\n' "${SSH_PRIVATE_KEY}" > /home/pwuser/ns8-key
 
-pip install --quiet --disable-pip-version-check \
-    robotframework-sshlibrary==3.8.0
+pip install --no-cache-dir --quiet --disable-pip-version-check \
+    robotframework==7.5 robotframework-sshlibrary==3.8.0
 
 cd /home/pwuser/ns8-module
 exec robot \
