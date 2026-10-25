@@ -63,7 +63,8 @@ jobs:
           repository: Platypuschan/ns8-idp-reworked
           ref: ${{ steps.refs.outputs.idp }}
           path: .test-idp
-      - run: pip install requests
+      # ldap3: the revocation test reads the AD group like the timer
+      - run: pip install requests ldap3
       - run: sudo apt-get update && sudo apt-get install -y podman skopeo
       - run: podman build -t localhost/ns8-vaultwarden-test-samba -f tests/integration/Samba.Containerfile tests/integration
       - name: Verify the independent IdP with the patched application
