@@ -1,8 +1,8 @@
 {
-  "name": "Vaultwarden Reworked (preview)",
+  "name": "Vaultwarden Reworked",
   "description": {
-    "en": "Vaultwarden SSO-only prototype; configure via API",
-    "de": "Vaultwarden-Prototyp mit AD-Gruppenfilter; Konfiguration per API"
+    "en": "Vaultwarden with AD SSO and direct administration from Cluster Manager",
+    "de": "Vaultwarden mit AD-SSO und direkter Administration im Cluster-Manager"
   },
   "categories": [
     "security"

@@ -34,7 +34,7 @@ Discovery is reachable from app
     Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
 
 *** Test Cases ***
-Install IdP and released Vaultwarden rc.2 for upgrade
+Install IdP and released Vaultwarden rc.3 for upgrade
     ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
     ${idp_image} =    Evaluate    $idp_image.strip()
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
@@ -42,7 +42,7 @@ Install IdP and released Vaultwarden rc.2 for upgrade
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${IDP}    ${data['module_id']}
     Run task    module/${IDP}/configure-module    {"host":"${IDP_HOST}","lets_encrypt":false}    decode_json=${FALSE}
-    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.2 1    return_rc=True
+    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.3 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${APP}    ${data['module_id']}
@@ -84,12 +84,12 @@ Activate application and verify private settings
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
 
-Upgrade configured rc.2 to corrected package
-    ${env_before} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+Upgrade configured rc.3 to corrected package
+    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v ^NS8_MANAGED_CONFIG= vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
-    ${env_after} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v ^NS8_MANAGED_CONFIG= vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
@@ -135,16 +135,15 @@ Pasta gateway regression with trusted test certificate
     ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} sh -c 'VW_RUNTIME_IMAGE="$VAULTWARDEN_REWORKED_SERVER_IMAGE" python3 ${fixture}/tests/network/run.py'    return_rc=True    return_stdout=True    return_stderr=True
     Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
 
-Revocation timer and private admin pages
+Revocation timer and authenticated admin pages
     ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    # Traefik allows the admin pages to the loopback address only: connect
-    # from the node address
+    # Admin login is reachable; administrative APIs still require a cookie.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin
-    Should Be Equal    ${code}    403
+    Should Be Equal    ${code}    200
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/alive
     Should Be Equal    ${code}    200
     # The timer service binds to LDAP and logs in to the admin API
@@ -152,6 +151,13 @@ Revocation timer and private admin pages
     Should Be Equal As Integers    ${rc}    0    ${err}
     ${rc} =    Execute Command    runagent -m ${APP} test -s admin-session    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+
+Every NS8 administrator can open the admin page
+    SSHLibrary.Put File    ${CURDIR}/../admin/ns8_access.py    /tmp/vw-ns8-admin-access.py
+    ${out}    ${err}    ${rc} =    Execute Command    python3 /tmp/vw-ns8-admin-access.py ${APP} ${APP_HOST}    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
+    Should Contain    ${out}    NS8 reader: admin access denied
+    Should Contain    ${out}    Module self-administration: admin login denied
 
 Concurrent IdP reconciliation and reconfiguration
     SSHLibrary.Put File    ${CURDIR}/check_reconfigure.sh    /tmp/vaultwarden-reconfigure-test.sh

@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Owner-only action: no get-/read- prefix (those are granted to readers)."""
+import json
+import subprocess
+import sys
+
+import vaultwarden_config as policy
+from vaultwarden_revoke import read_admin_token
+
+with open('settings.json') as stream:
+    config = policy.validate(json.load(stream))
+if subprocess.run(['systemctl', '--user', 'is-active', '--quiet', 'vaultwarden.service']).returncode:
+    raise ValueError('Vaultwarden ist noch nicht gestartet. Bitte zuerst konfigurieren.')
+json.dump({'url': 'https://' + config['host'] + '/admin/',
+    'token': read_admin_token()}, sys.stdout)

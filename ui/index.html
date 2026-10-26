@@ -1,1 +1,16 @@
-<!doctype html><html lang="de"><meta charset="utf-8"><title>Vaultwarden-Prototyp</title><h1>Vaultwarden-Prototyp</h1><p>Dieser Prototyp wird über die NS8-API konfiguriert. Siehe die Installationsanleitung im Repository.</p></html>
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Vaultwarden Administration</title>
+<style>
+body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; color: #161616; background: #f4f4f4; }
+button { font: inherit; background: #0f62fe; color: white; border: 0; padding: .8rem 1.2rem; cursor: pointer; }
+button:disabled { opacity: .5; }
+</style>
+<h1>Vaultwarden</h1>
+<p id="status" role="status">Adminoberfläche wird geöffnet …</p>
+<button id="open" type="button" disabled>Adminoberfläche öffnen</button>
+<script src="admin.js"></script>
+</html>

@@ -40,7 +40,8 @@ def environment(config, registration, admin_token):
         raise ValueError('Invalid admin token')
     # Values go directly into a Podman env file, never through shell sourcing.
     values = {
-        'DOMAIN': 'https://' + config['host'], 'SSO_ENABLED': 'true', 'SSO_ONLY': 'true',
+        'DOMAIN': 'https://' + config['host'], 'NS8_MANAGED_CONFIG': 'true',
+        'SSO_ENABLED': 'true', 'SSO_ONLY': 'true',
         'SSO_AUTHORITY': issuer, 'SSO_CLIENT_ID': registration['client_id'],
         'SSO_CLIENT_SECRET': registration['client_secret'],
         'SSO_SCOPES': 'profile email', 'SSO_PKCE': 'true',

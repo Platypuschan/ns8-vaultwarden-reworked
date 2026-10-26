@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Run as root in an isolated NS8 test VM: two owners succeed, reader denied."""
+import hashlib
+import http.cookiejar
+import json
+import secrets
+import ssl
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+module, host = sys.argv[1:]
+
+
+def task(action, data=None, user=None, password=None, success=True):
+    args = ['api-cli', 'run', action, '--data', json.dumps(data or {})]
+    if user:
+        login = subprocess.run(['api-cli', 'login', '-u', user, '-p', password, '-o'], capture_output=True, text=True)
+        assert login.returncode == 0, 'NS8 login failed (output hidden)'
+        args += ['-t', login.stdout.strip()]
+    result = subprocess.run(args, capture_output=True, text=True)
+    if success:
+        assert result.returncode == 0, f'{action} failed (output hidden)'
+        return json.loads(result.stdout) if result.stdout.strip() else None
+    assert result.returncode != 0, f'{action} unexpectedly authorized'
+
+
+created = []
+try:
+    for index, role in enumerate(['owner', 'owner', 'reader']):
+        username = 'vwtest' + secrets.token_hex(5)
+        password = secrets.token_urlsafe(32)
+        task('cluster/add-user', {'user': username,
+            'password_hash': hashlib.sha256(password.encode()).hexdigest(),
+            'set': {'display_name': 'Vaultwarden access test'},
+            'grant': [{'role': role, 'on': '*'}]})
+        created.append(username)
+        if role == 'reader':
+            task(f'module/{module}/get-configuration', user=username, password=password)
+            task(f'module/{module}/open-admin', user=username, password=password, success=False)
+            print('NS8 reader: admin access denied')
+            continue
+        login = task(f'module/{module}/open-admin', user=username, password=password)
+        assert login['url'] == f'https://{host}/admin/'
+        jar = http.cookiejar.CookieJar()
+        # QEMU uses a self-signed test certificate; production browser uses HTTPS normally.
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+            urllib.request.HTTPCookieProcessor(jar))
+        request = urllib.request.Request('https://127.0.0.1/admin/',
+            data=urllib.parse.urlencode({'token': login['token']}).encode(),
+            headers={'Host': host})
+        with opener.open(request, timeout=20) as response:
+            assert response.status == 200
+        assert any(c.name == 'VW_ADMIN' for c in jar)
+        with opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
+                headers={'Host': host}), timeout=20) as response:
+            assert isinstance(json.load(response), dict)
+        if index == 0:
+            change = urllib.request.Request('https://127.0.0.1/admin/config',
+                data=json.dumps({'password_hints_allowed': False,
+                    'sso_enabled': False, 'admin_token': 'must-not-change'}).encode(),
+                headers={'Host': host, 'Content-Type': 'application/json'})
+            with opener.open(change, timeout=20) as response:
+                assert response.status == 200
+            subprocess.run(['runagent', '-m', module, 'systemctl', '--user',
+                'restart', 'vaultwarden.service'], check=True, capture_output=True)
+            saved = subprocess.check_output(['runagent', '-m', module, 'podman',
+                'exec', 'vaultwarden-app', 'cat', '/data/config.json'], text=True)
+            values = json.loads(saved)
+            assert values['password_hints_allowed'] is False
+            assert values.get('admin_token') is None and values.get('sso_enabled') is None
+            print('Admin settings: saved and service restarted successfully')
+        print('NS8 administrator: direct admin login successful')
+    result = subprocess.run(['runagent', '-m', module, 'api-cli', 'run',
+        f'module/{module}/open-admin', '--data', '{}'], capture_output=True)
+    assert result.returncode != 0, 'Module unexpectedly obtained admin credentials'
+    print('Module self-administration: admin login denied')
+finally:
+    for username in created:
+        task('cluster/remove-user', {'user': username})

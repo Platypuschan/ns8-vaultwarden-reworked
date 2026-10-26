@@ -1,6 +1,6 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.3**, weiterhin mit
+Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.4**, weiterhin mit
 **IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
 [GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.3).
 Die rc.3 ist mit Neuinstallation und Update von rc.2 auf Debian13/Rocky9 je
@@ -55,7 +55,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.3'
+VW_VERSION='0.1.0-rc.4'
 VW_IDP_VERSION='0.1.0-rc.2'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
@@ -276,8 +276,7 @@ Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
 
 Der Timer nutzt die Vaultwarden-Admin-API über den Loopback-Port des Moduls
 mit einem zufälligen `ADMIN_TOKEN` in `vaultwarden.env` (nur dort, Modus 0600).
-Traefik lässt `/admin` über eine eigene Route nur für `127.0.0.1` zu und
-antwortet allen anderen mit 403. Vaultwarden protokolliert beim Start eine
+Ab rc.4 kann jeder NS8-Administrator die Adminoberfläche direkt über das Vaultwarden-Modul im Cluster-Manager öffnen. Die Modulaktion `open-admin` nutzt die vorhandenen NS8-Owner-Rechte und meldet den Browser automatisch an; Token müssen weder ausgelesen noch eingegeben werden. `/admin` ist erreichbar, administrative Funktionen benötigen weiterhin eine gültige Admin-Sitzung. Vaultwarden protokolliert beim Start eine
 Warnung, weil der Token nicht als Argon2-Hash hinterlegt ist.
 
 ```bash
@@ -347,8 +346,7 @@ Beim Restore bleiben Dienst und Widerruf-Timer deaktiviert: die neue Modul-ID mu
 `prepare-sso`, administrativer Gruppenregel und `configure-module` erneut
 registriert werden. Kein Start mit unkontrolliert übernommenen Credentials.
 Vollständigen Cluster-Disaster-Recovery vor produktivem Einsatz separat prüfen.
-Eine vorhandene `/data/config.json` kann Umgebungswerte übersteuern; der
-Prototyp verweigert dann den Start, statt diese Datei still zu löschen.
+Normale Admin-Einstellungen in `/data/config.json` werden ab rc.4 unterstützt und bleiben nach Neustarts erhalten. NS8-verwaltete SSO- und interne Zugangswerte bleiben schreibgeschützt und können nicht durch diese Datei überschrieben werden.
 
 ## Primärquellen
 
@@ -356,3 +354,7 @@ Prototyp verweigert dann den Start, statt diese Datei still zu löschen.
 - [Vaultwarden OIDC](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect)
 - [Bitwarden: Anmelden und Entsperren](https://bitwarden.com/en-gb/help/understand-log-in-vs-unlock/)
 - [Architektur und Grenzen dieses Prototyps](decisions/0001-client-group-gate.md)
+
+## Vaultwarden administrieren
+
+Im Cluster-Manager unter **Anwendungen → Vaultwarden** öffnen. Jeder angemeldete NS8-Administrator wird automatisch in der Vaultwarden-Adminoberfläche angemeldet. Es sind keine zusätzlichen Konten, Rollen, SSH-Tunnel oder manuell eingegebenen Tokens erforderlich. Dort können Benutzer verwaltet und normale Servereinstellungen gespeichert werden. Die von NS8 verwalteten SSO-Werte und der interne Adminzugang bleiben schreibgeschützt, damit SSO und der Widerruf-Timer weiter funktionieren.
