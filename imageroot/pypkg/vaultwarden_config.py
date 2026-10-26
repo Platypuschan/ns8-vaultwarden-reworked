@@ -51,8 +51,7 @@ def environment(config, registration, admin_token):
         'EMAIL_CHANGE_ALLOWED': 'false', 'PUSH_ENABLED': 'false',
         'ROCKET_PORT': '80', 'IP_HEADER': 'X-Forwarded-For',
         'IP_HEADER_TRUSTED_PROXIES': 'local',
-        # Used only by the revoke-access timer, on the loopback port: the
-        # admin pages are not routed outside the node
+        # Used by automatic NS8-owner login and the local revocation timer.
         'ADMIN_TOKEN': admin_token,
         # Opening the module performs an automatic login. Leave room for
         # repeated visits and several NS8 admins behind the same address.
