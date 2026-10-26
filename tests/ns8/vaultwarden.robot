@@ -85,8 +85,14 @@ Activate application and verify private settings
     Policy is enforced
 
 Upgrade configured rc.2 to corrected package
+    ${env_before} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+    ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
+    ${env_after} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+    ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
+    Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
     Policy is enforced
     ${rc} =    Execute Command    runagent -m ${APP} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
