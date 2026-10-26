@@ -85,11 +85,11 @@ Activate application and verify private settings
     Policy is enforced
 
 Upgrade configured rc.3 to corrected package
-    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v ^NS8_MANAGED_CONFIG= vaultwarden.env | sha256sum"
+    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST)=' vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
-    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v ^NS8_MANAGED_CONFIG= vaultwarden.env | sha256sum"
+    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST)=' vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}

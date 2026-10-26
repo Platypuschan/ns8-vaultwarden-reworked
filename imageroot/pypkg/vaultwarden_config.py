@@ -54,6 +54,9 @@ def environment(config, registration, admin_token):
         # Used only by the revoke-access timer, on the loopback port: the
         # admin pages are not routed outside the node
         'ADMIN_TOKEN': admin_token,
+        # Opening the module performs an automatic login. Leave room for
+        # repeated visits and several NS8 admins behind the same address.
+        'ADMIN_RATELIMIT_MAX_BURST': '30',
     }
     if any(not isinstance(v, str) or any(c in v for c in '\r\n\x00') for v in values.values()):
         raise ValueError('Invalid multiline environment value')

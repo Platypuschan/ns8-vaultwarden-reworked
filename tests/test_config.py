@@ -29,6 +29,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(parsed['SSO_AUTH_ONLY_NOT_SESSION'],'false')
         self.assertEqual(parsed['SSO_CLIENT_SECRET'],'test-only-secret')
         self.assertEqual(parsed['ADMIN_TOKEN'],self.token)
+        self.assertEqual(parsed['NS8_MANAGED_CONFIG'],'true')
+        self.assertEqual(parsed['ADMIN_RATELIMIT_MAX_BURST'],'30')
 
     def test_admin_token_is_kept_and_validated(self):
         for token in ('', 'short', 'a'*60+'\nSSO_ONLY=false', 'a'*60+' x', None):
