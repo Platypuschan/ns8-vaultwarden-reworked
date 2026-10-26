@@ -1,9 +1,9 @@
-Vierte Vorabversion von Vaultwarden Reworked für NethServer 8.
+Fünfte Vorabversion von Vaultwarden Reworked für NethServer 8.
 
-- Jeder NS8-Administrator kann beim Öffnen von Vaultwarden im Cluster-Manager direkt die Adminoberfläche erreichen. Die vorhandene NS8-Anmeldung wird verwendet; kein SSH-Tunnel und kein manuelles Auslesen oder Eingeben eines Admin-Tokens.
-- Die Prototyp-Platzhalterseite wird durch den automatischen Admin-Einstieg ersetzt. Administratoren können Benutzer verwalten und normale Servereinstellungen speichern.
-- Gespeicherte Admin-Einstellungen bleiben nach einem Neustart erhalten. Die durch NS8 verwalteten SSO- und internen Zugangswerte werden in der Adminoberfläche schreibgeschützt dargestellt und bleiben wirksam.
-- Das Update von rc.3 richtet den Adminzugang automatisch ein. Benutzer ohne administrative NS8-Berechtigung erhalten über die Modulaktion keinen Zugang; die Vaultwarden-Adminoberfläche bleibt durch ihre Admin-Sitzung geschützt.
-- Enthält die pasta-Korrektur aus rc.3. IdP bleibt auf 0.1.0-rc.2.
+- Die Adminoberfläche öffnet sich im Anwendungsbereich des Cluster-Managers, statt den ganzen Browser-Tab zu ersetzen. Der Cluster-Manager bleibt geöffnet.
+- Vaultwarden erlaubt dafür den HTTPS-Adressen der Clusterknoten das Einbetten. Der Wert wird von NS8 verwaltet, ist in der Adminoberfläche schreibgeschützt und wird beim Update von rc.4 automatisch gesetzt.
+- Wird der Cluster-Manager über eine andere Adresse oder Domain aufgerufen als die Knoten-FQDN (der Admin-Cookie verlangt dieselbe Domain), erscheint die Schaltfläche **In neuem Tab öffnen**. Der Cluster-Manager wird nie ersetzt.
+- Dokumentiert: Direktlink `https://<vaultwarden-host>/#/sso?identifier=00000000-01DC-01DC-01DC-000000000000` führt ohne E-Mail-Eingabe und SSO-Schaltfläche direkt zur IdP-Anmeldung. Das Masterpasswort zum Entsperren bleibt erforderlich.
+- IdP bleibt auf 0.1.0-rc.2.
 
-Die Veröffentlichung erfolgt nach erfolgreichen Unit-, Browser-, Protokoll- und NS8-QEMU-Prüfungen. Keine Stable-/Katalogfreigabe und kein automatischer Rollout auf die Nutzerinstanz. Offline-Tresore lassen sich weiterhin nicht serverseitig löschen; vollständige Cluster-Wiederherstellung und Mehrknoten-SSO sind nicht nachgewiesen.
+Die Veröffentlichung erfolgt nach erfolgreichen Unit-, Browser-, Protokoll- und NS8-QEMU-Prüfungen, einschließlich Update von rc.4. Keine Stable-/Katalogfreigabe und kein automatischer Rollout auf die Nutzerinstanz. Offline-Tresore lassen sich weiterhin nicht serverseitig löschen; vollständige Cluster-Wiederherstellung und Mehrknoten-SSO sind nicht nachgewiesen.

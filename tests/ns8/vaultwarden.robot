@@ -34,7 +34,7 @@ Discovery is reachable from app
     Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
 
 *** Test Cases ***
-Install IdP and released Vaultwarden rc.3 for upgrade
+Install IdP and released Vaultwarden rc.4 for upgrade
     ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
     ${idp_image} =    Evaluate    $idp_image.strip()
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
@@ -42,7 +42,7 @@ Install IdP and released Vaultwarden rc.3 for upgrade
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${IDP}    ${data['module_id']}
     Run task    module/${IDP}/configure-module    {"host":"${IDP_HOST}","lets_encrypt":false}    decode_json=${FALSE}
-    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.3 1    return_rc=True
+    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.4 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${APP}    ${data['module_id']}
@@ -84,15 +84,18 @@ Activate application and verify private settings
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
 
-Upgrade configured rc.3 to corrected package
-    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST)=' vaultwarden.env | sha256sum"
+Upgrade configured rc.4 to corrected package
+    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS)=' vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
-    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST)=' vaultwarden.env | sha256sum"
+    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS)=' vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
+    # The update lets the cluster manager on the node embed the admin page.
+    ${rc} =    Execute Command    runagent -m ${APP} grep -Eq '^ALLOWED_IFRAME_ANCESTORS=https://[^ ]+' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
     Policy is enforced
     ${rc} =    Execute Command    runagent -m ${APP} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0

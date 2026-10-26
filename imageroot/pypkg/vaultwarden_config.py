@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
 HOST = re.compile(r'(?=.{1,253}\Z)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\Z')
 MODULE = re.compile(r'[a-z][a-z0-9-]*[1-9][0-9]*\Z')
+ORIGINS = re.compile(r'(?:https://[a-z0-9.-]+(?: |\Z))*\Z')
 
 
 def validate(data):
@@ -28,7 +29,13 @@ def validate(data):
         'required_group': group, 'lets_encrypt': data.get('lets_encrypt', True)}
 
 
-def environment(config, registration, admin_token):
+def frame_ancestors(hostnames):
+    """HTTPS origins allowed to embed Vaultwarden: the cluster manager runs on the nodes."""
+    names = {h.rstrip('.').lower() for h in hostnames if isinstance(h, str)}
+    return ' '.join(sorted('https://' + h for h in names if '.' in h and HOST.fullmatch(h)))
+
+
+def environment(config, registration, admin_token, ancestors=''):
     issuer = registration['issuer']
     url = urlsplit(issuer)
     if (url.scheme != 'https' or not url.hostname or url.username or url.password
@@ -38,6 +45,8 @@ def environment(config, registration, admin_token):
         raise ValueError('Invalid client ID')
     if not isinstance(admin_token, str) or not ADMIN_TOKEN.fullmatch(admin_token):
         raise ValueError('Invalid admin token')
+    if not isinstance(ancestors, str) or not ORIGINS.fullmatch(ancestors):
+        raise ValueError('Invalid frame ancestors')
     # Values go directly into a Podman env file, never through shell sourcing.
     values = {
         'DOMAIN': 'https://' + config['host'], 'NS8_MANAGED_CONFIG': 'true',
@@ -56,6 +65,8 @@ def environment(config, registration, admin_token):
         # Opening the module performs an automatic login. Leave room for
         # repeated visits and several NS8 admins behind the same address.
         'ADMIN_RATELIMIT_MAX_BURST': '30',
+        # The admin page opens inside the cluster manager's application frame.
+        'ALLOWED_IFRAME_ANCESTORS': ancestors,
     }
     if any(not isinstance(v, str) or any(c in v for c in '\r\n\x00') for v in values.values()):
         raise ValueError('Invalid multiline environment value')
@@ -79,6 +90,15 @@ def admin_token(env_path='vaultwarden.env'):
     except FileNotFoundError:
         pass
     return secrets.token_urlsafe(48)
+
+
+def env_value(name, env_path='vaultwarden.env'):
+    with open(env_path) as f:
+        for line in f:
+            key, _, value = line.rstrip('\n').partition('=')
+            if key == name:
+                return value
+    return None
 
 
 def private_write(path, text):

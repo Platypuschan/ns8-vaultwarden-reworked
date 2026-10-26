@@ -96,7 +96,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.path.endswith('role=reader'):
                 self.send(403, b'{}', 'application/json')
             else:
-                self.send(200, json.dumps({'url': vault + '/admin/', 'token': token}).encode(), 'application/json')
+                # role=tab: an installation whose cluster manager may not embed the page
+                ancestors = [] if self.path.endswith('role=tab') else [base]
+                self.send(200, json.dumps({'url': vault + '/admin/', 'token': token,
+                    'frame_ancestors': ancestors}).encode(), 'application/json')
         elif self.path == '/test-restart':
             command('podman', 'restart', name)
             ready()
@@ -144,7 +147,8 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
             '-v', f'{path / "data"}:/data:Z', '-e', 'NS8_MANAGED_CONFIG=true',
             '-e', 'SSO_ENABLED=true', '-e', 'SSO_ONLY=true', '-e', 'SSO_AUTHORITY=https://sso.example.test/realms/ad.test',
             '-e', 'SSO_CLIENT_ID=fixture', '-e', 'SSO_CLIENT_SECRET=fixture',
-            '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault, image)
+            '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
+            '-e', 'ALLOWED_IFRAME_ANCESTORS=' + base, image)
         ready()
         subprocess.run(['node', str(ROOT / 'tests/admin/browser.mjs')], check=True,
             env=dict(os.environ, TEST_BASE=base))

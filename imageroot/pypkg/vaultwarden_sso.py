@@ -1,6 +1,7 @@
 """NS8 task calls; the app never receives IdP administration credentials."""
 import json
 import os
+import socket
 import agent
 import agent.tasks
 import vaultwarden_config as policy
@@ -27,6 +28,16 @@ def configure_admin_route(traefik, config):
     agent.assert_exp(response['exit_code'] == 0, 'Traefik admin route configuration failed')
 
 
+def cluster_hostnames():
+    """Node FQDNs that serve the cluster manager. set-fqdn keeps the VPN
+    endpoints in sync with them."""
+    names = [socket.getfqdn()]
+    rdb = agent.redis_connect()
+    for key in rdb.scan_iter('node/*/vpn'):
+        names.append((rdb.hget(key, 'endpoint') or '').rsplit(':', 1)[0])
+    return names
+
+
 def prepare(config):
     if agent.get_bound_domain_list(agent.redis_connect()) != [config['domain']]:
         agent.bind_user_domains([config['domain']], check=True)
@@ -39,7 +50,8 @@ def prepare(config):
         # lifespan than 10 minutes makes them refresh on every request
         'access_token_lifespan': 600,
     })
-    env = policy.environment(config, registration, policy.admin_token())
+    env = policy.environment(config, registration, policy.admin_token(),
+        policy.frame_ancestors(cluster_hostnames()))
     policy.private_write('vaultwarden.env', env)
     policy.private_write('settings.json', json.dumps(config))
     return registration

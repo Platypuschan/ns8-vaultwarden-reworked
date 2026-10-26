@@ -11,5 +11,7 @@ with open('settings.json') as stream:
     config = policy.validate(json.load(stream))
 if subprocess.run(['systemctl', '--user', 'is-active', '--quiet', 'vaultwarden.service']).returncode:
     raise ValueError('Vaultwarden ist noch nicht gestartet. Bitte zuerst konfigurieren.')
+# The UI embeds the admin page only for cluster manager origins Vaultwarden allows.
+ancestors = (policy.env_value('ALLOWED_IFRAME_ANCESTORS') or '').split()
 json.dump({'url': 'https://' + config['host'] + '/admin/',
-    'token': read_admin_token()}, sys.stdout)
+    'token': read_admin_token(), 'frame_ancestors': ancestors}, sys.stdout)
