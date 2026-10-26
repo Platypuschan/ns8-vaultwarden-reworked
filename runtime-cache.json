@@ -1,6 +1,6 @@
 {
-  "recipe": "runtime-2c01b1a830e44679",
-  "image": "ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:80b2af497a96748cf9c34030ccaa4455d6535d69669e11c1bd2eeceb2a4fc0e3",
-  "build_run": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/actions/runs/40217602527",
-  "source_commit": "96c3f528ec773bde88155a67501e108aa3449dbe"
+  "recipe": "runtime-7ff5cdb5e8c784f5",
+  "image": "ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:3ab27a31a8c2e8b7f1d1463bdf7ae0def7a2253cc80e9c9985fa18c292da6e03",
+  "build_run": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/actions/runs/40399528842",
+  "source_commit": "55d47f94e4cd9f789bc67a4ec0c457ec1caea8c1"
 }

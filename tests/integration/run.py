@@ -554,7 +554,7 @@ class LoginTests(unittest.TestCase):
             json={'password_hints_allowed':False, 'sso_enabled':False, 'sso_only':False,
                 'admin_token':'changed-by-admin', 'signups_allowed':True}, timeout=20)
         self.assertEqual(response.status_code,200,response.text[:200])
-        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json'))
+        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json').stdout)
         self.assertFalse(saved['password_hints_allowed'])
         for key in ('sso_enabled','sso_only','admin_token','signups_allowed'):
             self.assertIsNone(saved.get(key))
@@ -562,7 +562,7 @@ class LoginTests(unittest.TestCase):
         wait_http(self.vw_url+'/alive',self.names)
         api.cookie=None
         api.users()
-        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json'))
+        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json').stdout)
         self.assertFalse(saved['password_hints_allowed'])
         _,r,target,_=self.auth('denied')
         self.assertIsNone(target)
