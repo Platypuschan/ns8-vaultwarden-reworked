@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import json
+import os
+
+import agent
+import vaultwarden_config as policy
+import vaultwarden_network as network
+
+with open('settings.json') as stream:
+    config = policy.validate(json.load(stream))
+network.prepare_network(config, network.read_issuer(), agent.redis_connect(), os.environ['NODE_ID'])

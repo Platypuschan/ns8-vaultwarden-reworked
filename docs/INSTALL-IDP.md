@@ -5,6 +5,11 @@ Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
 
+**Entwicklungsstand nach rc.2:** Die Korrektur des lokalen IdP-Zugriffs unter
+`pasta` ist auf diesem Branch enthalten, aber noch nicht veröffentlicht.
+Die oben genannte rc.2 enthält sie nicht. Details und Entfernung des bisherigen
+Testworkarounds: [Netzwerkkorrektur](NETWORK-FIX.md).
+
 ## Zielkonfiguration
 
 | Eigenschaft | Wert |
@@ -198,6 +203,15 @@ runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden.service
 runagent -m vaultwarden-reworked1 podman ps
 ```
 
+Ab dem Entwicklungsstand nach rc.2 prüft `configure-module` bei
+`lets_encrypt:true` die OIDC-Discovery auch aus dem laufenden App-Container.
+Erfolg wird zusätzlich mit `oidc_verified:true` ausgegeben. Bei einem Fehler
+die gemeldete DNS-/HTTPS-/Netzwerkursache beheben und dieselbe Konfiguration
+erneut ausführen; Dienst und Timer können dabei bereits laufen. Bei manuell
+verwalteten Zertifikaten (`lets_encrypt:false`) wird dieser automatische Test
+nicht ausgeführt und `oidc_verified:false` ausgegeben. Zertifikat installieren
+und die Discovery separat aus dem Container prüfen, bevor Benutzer sich anmelden.
+
 Die dauerhafte Konfiguration liegt in `settings.json` und `vaultwarden.env`
 im Modul-State. `vaultwarden.env` enthält das Client-Secret und hat Modus 0600.
 Nicht ausgeben oder ins Repository kopieren. `get-configuration` liefert nur
@@ -282,6 +296,18 @@ In der aktuellen offiziellen Bitwarden-App die selbst gehostete Serveradresse
 Masterpasswort für den Tresor festlegen bzw. den vorhandenen Tresor damit
 entsperren. Die konkrete Oberfläche und Browser-Rückleitung vor einem Rollout
 mit den verwendeten App-Versionen testen.
+
+Die Serveradresse muss exakt der `host`-Einstellung von Vaultwarden entsprechen;
+hier nicht den IdP-Host oder den AD-Domänennamen eintragen. Benutzerdefinierte
+API-/Identitätsserver-URLs leer lassen, wenn keine separate Konfiguration
+vorgesehen ist. Die App kann die Organisationskennung automatisch vom Server
+übernehmen; diesen Wert unverändert lassen. Der AD-Domänenname ist keine
+manuell einzutragende Organisationskennung. Mit Android-App 2026.10.0 wurde
+dieser Ablauf auf dem Testtablet nach Korrektur der Serveradresse bestätigt.
+
+SSO verwendet das AD-Passwort auf der IdP-Seite. Anschließend entsperrt das
+eigene Masterpasswort den Tresor. Die direkte Passwortanmeldung anstelle von
+SSO ist durch `SSO_ONLY` gesperrt.
 
 Danach auf Android Biometrie einschalten und die Timeout-Aktion **Sperren**
 wählen. Solange das Konto angemeldet bleibt, braucht das lokale Entsperren

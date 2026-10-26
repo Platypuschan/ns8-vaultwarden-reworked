@@ -25,6 +25,14 @@ Policy is enforced
     Should Be Equal    ${policy['group_path']}    /${GROUP}
     Should Be Empty    ${policy['issues']}
 
+Discovery is reachable from app
+    # The QEMU fixture uses a self-signed certificate. -k is confined to
+    # this test; production configure-module verifies trusted HTTPS.
+    ${out}    ${rc} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app curl -kfsS --connect-timeout 5 --max-time 15 https://${IDP_HOST}/realms/${DOMAIN}/.well-known/openid-configuration    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    ${out}
+    ${metadata} =    Evaluate    json.loads($out)    modules=json
+    Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
+
 *** Test Cases ***
 Install reworked modules
     ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
@@ -75,6 +83,28 @@ Activate application and verify private settings
     ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_ONLY=true' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
+
+Local IdP discovery survives container recreation
+    ${backend} =    Execute Command    runagent -m ${APP} podman info --format '{{.Host.RootlessNetworkCmd}}'
+    Skip If    '${backend.strip()}' != 'pasta'    This regression targets pasta; slirp4netns retains its DNS path
+    Discovery is reachable from app
+    ${before} =    Execute Command    runagent -m ${APP} podman inspect vaultwarden-app --format '{{.Id}}'
+    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user restart vaultwarden.service    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${after} =    Execute Command    runagent -m ${APP} podman inspect vaultwarden-app --format '{{.Id}}'
+    Should Not Be Equal    ${before.strip()}    ${after.strip()}
+    Discovery is reachable from app
+
+Pasta gateway regression with trusted test certificate
+    ${backend} =    Execute Command    runagent -m ${APP} podman info --format '{{.Host.RootlessNetworkCmd}}'
+    Skip If    '${backend.strip()}' != 'pasta'    Requires pasta
+    ${fixture} =    Set Variable    /tmp/vw-network-${APP}
+    Execute Command    mkdir -p ${fixture}/tests/network ${fixture}/imageroot/pypkg
+    SSHLibrary.Put File    ${CURDIR}/../network/run.py    ${fixture}/tests/network/run.py
+    SSHLibrary.Put File    ${CURDIR}/../../imageroot/pypkg/vaultwarden_network.py    ${fixture}/imageroot/pypkg/vaultwarden_network.py
+    SSHLibrary.Put File    ${CURDIR}/../../imageroot/pypkg/vaultwarden_config.py    ${fixture}/imageroot/pypkg/vaultwarden_config.py
+    ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} sh -c 'VW_RUNTIME_IMAGE="$VAULTWARDEN_REWORKED_SERVER_IMAGE" python3 ${fixture}/tests/network/run.py'    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
 
 Revocation timer and private admin pages
     ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
