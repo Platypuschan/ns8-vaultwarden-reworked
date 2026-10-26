@@ -95,9 +95,10 @@ Architektur und Quellen: [ADR 0004](decisions/0004-local-idp-pasta.md).
   Argumente, die lokale Hostzuordnung wird als ein Argument übergeben.
 - Modulimage lokal gebaut und exportierten Inhalt geprüft: Helper ausführbar,
   Dienstdatei enthalten, Runtime per Digest gepinnt, keine Python-Testcaches.
-- Python-/JSON-/Shell-Syntax und Robot-Dryrun aller zwölf NS8-Tests erfolgreich.
+- Python-/JSON-/Shell-Syntax und Robot-Dryrun der NS8-Tests erfolgreich.
 
-Noch nicht geprüft: neuer kompletter NS8-QEMU-Lauf, Installation des korrigierten
-Pakets auf der Nutzerinstanz, echter Mehrknoten-SSO-Ablauf. Der frühere erfolgreiche
-Web-/Android-Test nutzte den manuellen Workaround, nicht dieses neue Paket.
-Keine Veröffentlichung und kein Deployment durch diese lokale Prüfung.
+Der finale NS8-QEMU-Lauf ist inzwischen erfolgreich: Debian13 und Rocky9 je
+14/14, einschließlich echtem rc.2-Update, Neuinstallation und pasta/TLS.
+[Release-Nachweise und Digests](RELEASE-0.1.0-rc.3.md).
+Noch nicht geprüft: Installation auf der Nutzerinstanz und echter Mehrknoten-SSO.
+Ein Deployment auf die Nutzerinstanz wurde nicht automatisch ausgeführt.

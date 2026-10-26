@@ -3,6 +3,8 @@
 Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.3**, weiterhin mit
 **IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
 [GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.3).
+Die rc.3 ist mit Neuinstallation und Update von rc.2 auf Debian13/Rocky9 je
+14/14 geprüft; [aktuelle Nachweise](RELEASE-0.1.0-rc.3.md).
 Die gemeinsame Vorgängerversion rc.2 wurde auf NS8 Core 3.23.2 unter Debian 13
 und Rocky 9 geprüft; die [historischen Prüfnachweise](RELEASE-0.1.0-rc.2.md)
 bleiben erhalten. Hinweise zum Update: [Netzwerkkorrektur](NETWORK-FIX.md).
