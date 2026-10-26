@@ -1,7 +1,7 @@
 # Lokaler IdP-Zugriff mit pasta
 
-Status: Korrektur auf dem Entwicklungsbranch, noch nicht veröffentlicht.
-Die veröffentlichten 0.1.0-rc.2-Images enthalten diese Änderung nicht.
+Korrektur ab **0.1.0-rc.3**. Die 0.1.0-rc.2-Images enthalten diese Änderung nicht.
+IdP bleibt auf 0.1.0-rc.2; ein IdP-Update ist dafür nicht erforderlich.
 
 ## Fehler und Korrektur
 
@@ -21,6 +21,17 @@ und wird bei jedem Dienststart überschrieben. Sie muss nicht gesichert werden.
 Ein Paketupdate startet den aktivierten Dienst über das vorhandene
 `update-module.d/80restart` neu; dadurch wird die Zuordnung auch beim Update
 erzeugt. Ein Restore erfordert wie bisher erneute SSO-Vorbereitung und Freigabe.
+
+## Update von rc.2
+
+Als root auf dem NS8-Host (tatsächliche Modul-ID verwenden):
+
+```bash
+api-cli run cluster/update-module --data \
+  '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.3","instances":["vaultwarden-reworked1"]}'
+```
+
+Erst nach erfolgreichem Update den bisherigen Testworkaround entfernen.
 
 ## Alten Testworkaround entfernen
 

@@ -1,14 +1,18 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 26.10.2026. Veröffentlichte Vorabversion **0.1.0-rc.2**. Beide eigenständigen Pakete wurden auf NS8 Core 3.23.2 unter Debian 13 und Rocky 9 gemeinsam geprüft, jeweils 10/10 Tests. [Release-Prüfnachweise und Digests](RELEASE-0.1.0-rc.2.md). Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
+Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.3**, weiterhin mit
+**IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.3).
+Die gemeinsame Vorgängerversion rc.2 wurde auf NS8 Core 3.23.2 unter Debian 13
+und Rocky 9 geprüft; die [historischen Prüfnachweise](RELEASE-0.1.0-rc.2.md)
+bleiben erhalten. Hinweise zum Update: [Netzwerkkorrektur](NETWORK-FIX.md).
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
 
-**Korrektur für rc.3:** Die Korrektur des lokalen IdP-Zugriffs unter
-`pasta` ist für die neue Version vorbereitet; den Veröffentlichungsstatus im Release prüfen.
-Die oben genannte rc.2 enthält sie nicht. Details und Entfernung des bisherigen
-Testworkarounds: [Netzwerkkorrektur](NETWORK-FIX.md).
+**Ab rc.3:** Der lokale IdP-Zugriff unter `pasta` wird automatisch konfiguriert.
+rc.2 enthält diese Korrektur nicht. Den bisherigen Test-Drop-in erst nach
+Installation von rc.3 gemäß [Netzwerkkorrektur](NETWORK-FIX.md) entfernen.
 
 ## Zielkonfiguration
 

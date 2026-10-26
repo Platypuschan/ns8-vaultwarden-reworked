@@ -1,6 +1,8 @@
 # ns8-vaultwarden-reworked
 
-Veröffentlichte Vorabversion **0.1.0-rc.2** für NethServer 8. Vaultwarden 1.37.2 mit SSO-only und administrativer AD-Gruppenfreigabe über `idp-reworked`.
+Vorabversion **0.1.0-rc.3** für NethServer 8. Vaultwarden 1.37.2 mit SSO-only und administrativer AD-Gruppenfreigabe über `idp-reworked`.
+
+Ab rc.3 wird ein lokaler IdP unter `pasta` automatisch über Podmans Host-Gateway erreicht. Die Zuordnung wird bei jedem Dienststart erneuert. [Netzwerkkorrektur und Update von rc.2](docs/NETWORK-FIX.md).
 
 Die Runtime sperrt zusätzlich persönliche API-Key-Gerätelogins im SSO-only-Modus. Mitgliedschaft wird durch den IdP bei neuen Anmeldungen und Token-Erneuerung geprüft. Ein Timer des Moduls deaktiviert alle zwei Minuten die Vaultwarden-Konten von Benutzern, die nicht mehr in der Gruppe sind, und beendet so auch bestehende Sitzungen ([Widerruf](docs/INSTALL-IDP.md#widerruf-bestehender-sitzungen)). Offline-Tresore auf den Geräten lassen sich serverseitig nicht löschen.
 
