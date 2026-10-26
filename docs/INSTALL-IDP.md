@@ -5,8 +5,8 @@ Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
 
-**Entwicklungsstand nach rc.2:** Die Korrektur des lokalen IdP-Zugriffs unter
-`pasta` ist auf diesem Branch enthalten, aber noch nicht veröffentlicht.
+**Korrektur für rc.3:** Die Korrektur des lokalen IdP-Zugriffs unter
+`pasta` ist für die neue Version vorbereitet; den Veröffentlichungsstatus im Release prüfen.
 Die oben genannte rc.2 enthält sie nicht. Details und Entfernung des bisherigen
 Testworkarounds: [Netzwerkkorrektur](NETWORK-FIX.md).
 
@@ -49,8 +49,9 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.2'
-VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_VERSION}"
+VW_VERSION='0.1.0-rc.3'
+VW_IDP_VERSION='0.1.0-rc.2'
+VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
 ```
 
