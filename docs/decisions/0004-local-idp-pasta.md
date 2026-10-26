@@ -1,6 +1,6 @@
 # 0004: Route a co-located IdP through Podman's host gateway
 
-Date: 2026-10-26. Status: implemented, pending release.
+Date: 2026-10-26. Status: implemented and released in 0.1.0-rc.3.
 
 ## Observed failure
 
