@@ -1,6 +1,6 @@
 # 0005: Direct Vaultwarden administration for every NS8 administrator
 
-Date: 2026-10-26. Status: implemented, preparing rc.4.
+Date: 2026-10-26. Status: implemented and released in 0.1.0-rc.4.
 
 The user explicitly requires every NS8 administrator to reach Vaultwarden’s admin page from Cluster Manager without tunnels or manual token handling. Replace the placeholder UI with an automatic authenticated handoff using the existing NS8 task/event bridge.
 
