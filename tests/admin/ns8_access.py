@@ -54,6 +54,11 @@ try:
             headers={'Host': host})
         with opener.open(request, timeout=20) as response:
             assert response.status == 200
+            # The cluster manager on the node may embed the admin page.
+            csp = response.headers['Content-Security-Policy']
+        assert login['frame_ancestors'], 'No cluster manager origin allowed'
+        ancestors = csp.split('frame-ancestors', 1)[1].split(';', 1)[0].split()
+        assert all(origin in ancestors for origin in login['frame_ancestors'])
         assert any(c.name == 'VW_ADMIN' for c in jar)
         with opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
                 headers={'Host': host}), timeout=20) as response:
@@ -61,7 +66,8 @@ try:
         if index == 0:
             change = urllib.request.Request('https://127.0.0.1/admin/config',
                 data=json.dumps({'password_hints_allowed': False,
-                    'sso_enabled': False, 'admin_token': 'must-not-change'}).encode(),
+                    'sso_enabled': False, 'admin_token': 'must-not-change',
+                    'allowed_iframe_ancestors': ''}).encode(),
                 headers={'Host': host, 'Content-Type': 'application/json'})
             with opener.open(change, timeout=20) as response:
                 assert response.status == 200
@@ -72,6 +78,7 @@ try:
             values = json.loads(saved)
             assert values['password_hints_allowed'] is False
             assert values.get('admin_token') is None and values.get('sso_enabled') is None
+            assert values.get('allowed_iframe_ancestors') is None
             print('Admin settings: saved and service restarted successfully')
         print('NS8 administrator: direct admin login successful')
     result = subprocess.run(['runagent', '-m', module, 'api-cli', 'run',

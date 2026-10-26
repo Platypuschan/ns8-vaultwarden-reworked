@@ -31,6 +31,19 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(parsed['ADMIN_TOKEN'],self.token)
         self.assertEqual(parsed['NS8_MANAGED_CONFIG'],'true')
         self.assertEqual(parsed['ADMIN_RATELIMIT_MAX_BURST'],'30')
+        self.assertEqual(parsed['ALLOWED_IFRAME_ANCESTORS'],'')
+
+    def test_cluster_manager_may_embed_the_admin_page(self):
+        ancestors=policy.frame_ancestors(['Node1.Example.COM.','node2.example.com','node1.example.com',
+            'localhost','','bad host',None,'x;frame-ancestors *'])
+        self.assertEqual(ancestors,'https://node1.example.com https://node2.example.com')
+        env=policy.environment(self.config,self.registration,self.token,ancestors)
+        parsed=dict(line.split('=',1) for line in env.splitlines())
+        self.assertEqual(parsed['ALLOWED_IFRAME_ANCESTORS'],ancestors)
+        self.assertEqual(policy.frame_ancestors([]),'')
+        for value in ('*','https://a.test; script-src *','http://a.test','https://a.test\nSSO_ONLY=false',None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                policy.environment(self.config,self.registration,self.token,value)
 
     def test_admin_token_is_kept_and_validated(self):
         for token in ('', 'short', 'a'*60+'\nSSO_ONLY=false', 'a'*60+' x', None):

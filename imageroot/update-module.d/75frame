@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+# Installations up to 0.1.0-rc.4 do not allow the cluster manager to embed
+# the admin page. 80restart applies the new environment.
+import os
+import sys
+
+import agent
+import vaultwarden_config as policy
+import vaultwarden_sso
+
+if not os.path.exists('vaultwarden.env'):
+    sys.exit(0)
+with agent.exclusive_file_lock('configuration'):
+    with open('vaultwarden.env') as f:
+        lines = [line for line in f.read().splitlines() if not line.startswith('ALLOWED_IFRAME_ANCESTORS=')]
+    ancestors = policy.frame_ancestors(vaultwarden_sso.cluster_hostnames())
+    policy.private_write('vaultwarden.env', '\n'.join(lines + ['ALLOWED_IFRAME_ANCESTORS=' + ancestors]) + '\n')

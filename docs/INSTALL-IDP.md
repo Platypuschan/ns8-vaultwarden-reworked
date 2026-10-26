@@ -360,3 +360,17 @@ Normale Admin-Einstellungen in `/data/config.json` werden ab rc.4 unterstützt u
 ## Vaultwarden administrieren
 
 Im Cluster-Manager unter **Anwendungen → Vaultwarden** öffnen. Jeder angemeldete NS8-Administrator wird automatisch in der Vaultwarden-Adminoberfläche angemeldet. Es sind keine zusätzlichen Konten, Rollen, SSH-Tunnel oder manuell eingegebenen Tokens erforderlich. Dort können Benutzer verwaltet und normale Servereinstellungen gespeichert werden. Die von NS8 verwalteten SSO-Werte und der interne Adminzugang bleiben schreibgeschützt, damit SSO und der Widerruf-Timer weiter funktionieren.
+
+Die Adminoberfläche öffnet sich im Anwendungsbereich des Cluster-Managers; der Cluster-Manager bleibt geöffnet. Dafür erlaubt das Modul den HTTPS-Adressen der Clusterknoten (Knoten-FQDN, wie in den VPN-Endpunkten hinterlegt) das Einbetten (`ALLOWED_IFRAME_ANCESTORS`, NS8-verwaltet und schreibgeschützt). Der Vaultwarden-Admin-Cookie ist `SameSite=Strict`; eingebettet funktioniert er nur, wenn Cluster-Manager und Vaultwarden unter derselben Domain liegen (z. B. `node2.example.com` und `vault.node2.example.com`). Wird der Cluster-Manager über eine andere Adresse (IP, anderer Name, fremde Domain) aufgerufen, zeigt die Seite die Schaltfläche **In neuem Tab öffnen**. Nach einer Änderung des Knoten-FQDN `configure-module` erneut ausführen.
+
+## Anmeldung vereinfachen
+
+Direktlink für Benutzer, z. B. als Lesezeichen oder Startseiten-Link:
+
+```text
+https://vault.example.com/#/sso?identifier=00000000-01DC-01DC-01DC-000000000000
+```
+
+Der Web-Tresor überspringt damit E-Mail-Eingabe und SSO-Schaltfläche und leitet sofort zur IdP-Anmeldung weiter (Bitwarden-Webclient: Parameter `identifier` sendet das SSO-Formular automatisch ab; Vaultwarden nutzt immer diese feste Kennung). Beim IdP genügen Benutzername oder E-Mail-Adresse und AD-Passwort. Besteht bereits eine IdP-Sitzung, entfällt auch dieser Schritt. Danach entsperrt das Masterpasswort den Tresor; es lässt sich nicht durch SSO ersetzen, weil es den Tresor Ende-zu-Ende verschlüsselt (Vaultwarden unterstützt weder Key Connector noch vertrauenswürdige Geräte).
+
+Die E-Mail auf der Vaultwarden-Startseite wird nicht an den IdP weitergegeben: Die Bitwarden-Clients senden sie nicht an `/identity/connect/authorize`, deshalb ist kein Vorausfüllen beim IdP möglich. Die Android-App fragt weiterhin zuerst die E-Mail ab und merkt sie sich; danach **Enterprise Single Sign-On** wählen.
