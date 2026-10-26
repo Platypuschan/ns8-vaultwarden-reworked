@@ -7,6 +7,7 @@ import agent
 import agent.tasks
 import vaultwarden_config as policy
 import vaultwarden_sso
+import vaultwarden_network
 
 config = policy.validate(json.load(sys.stdin))
 with agent.exclusive_file_lock('configuration'):
@@ -30,4 +31,10 @@ with agent.exclusive_file_lock('configuration'):
     subprocess.run(['systemctl', '--user', 'reset-failed', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'enable', '--now', 'vaultwarden-revoke.timer'], check=True, stdout=sys.stderr)
-json.dump({'configured': True, 'host': config['host']}, sys.stdout)
+    # Automatic HTTPS must be usable from the application itself, not just
+    # from the host. Manually managed certificates may still need installing.
+    oidc_verified = False
+    if config['lets_encrypt']:
+        vaultwarden_network.check_discovery(registration['issuer'])
+        oidc_verified = True
+json.dump({'configured': True, 'host': config['host'], 'oidc_verified': oidc_verified}, sys.stdout)

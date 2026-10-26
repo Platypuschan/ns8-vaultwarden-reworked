@@ -25,8 +25,16 @@ Policy is enforced
     Should Be Equal    ${policy['group_path']}    /${GROUP}
     Should Be Empty    ${policy['issues']}
 
+Discovery is reachable from app
+    # The QEMU fixture uses a self-signed certificate. -k is confined to
+    # this test; production configure-module verifies trusted HTTPS.
+    ${out}    ${rc} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app curl -kfsS --connect-timeout 5 --max-time 15 https://${IDP_HOST}/realms/${DOMAIN}/.well-known/openid-configuration    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    ${out}
+    ${metadata} =    Evaluate    json.loads($out)    modules=json
+    Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
+
 *** Test Cases ***
-Install reworked modules
+Install IdP and released Vaultwarden rc.2 for upgrade
     ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
     ${idp_image} =    Evaluate    $idp_image.strip()
     ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
@@ -34,7 +42,7 @@ Install reworked modules
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${IDP}    ${data['module_id']}
     Run task    module/${IDP}/configure-module    {"host":"${IDP_HOST}","lets_encrypt":false}    decode_json=${FALSE}
-    ${out}    ${rc} =    Execute Command    add-module ${IMAGE_URL} 1    return_rc=True
+    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.2 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${APP}    ${data['module_id']}
@@ -75,6 +83,57 @@ Activate application and verify private settings
     ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_ONLY=true' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
+
+Upgrade configured rc.2 to corrected package
+    ${env_before} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+    ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+    ${env_after} =    Execute Command    runagent -m ${APP} sha256sum vaultwarden.env
+    ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
+    Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
+    Policy is enforced
+    ${rc} =    Execute Command    runagent -m ${APP} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
+Fresh installation of corrected package
+    ${out}    ${rc} =    Execute Command    add-module ${IMAGE_URL} 1    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    ${out}
+    ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
+    ${fresh} =    Set Variable    ${data['module_id']}
+    ${host} =    Set Variable    vaultwarden-fresh.fqdn.test
+    Run task    module/${fresh}/prepare-sso    {"host":"${host}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
+    Run task    module/${IDP}/alter-realm-client    {"domain":"${DOMAIN}","client_id":"${fresh}","access_group":"${GROUP}"}    decode_json=${FALSE}
+    Run task    module/${fresh}/configure-module    {"host":"${host}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
+    ${rc} =    Execute Command    runagent -m ${fresh} systemctl --user is-active --quiet vaultwarden.service    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    runagent -m ${fresh} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    remove-module --no-preserve ${fresh}    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
+Local IdP discovery survives container recreation
+    ${backend} =    Execute Command    runagent -m ${APP} podman info --format '{{.Host.RootlessNetworkCmd}}'
+    Skip If    '${backend.strip()}' != 'pasta'    This regression targets pasta; slirp4netns retains its DNS path
+    Discovery is reachable from app
+    ${before} =    Execute Command    runagent -m ${APP} podman inspect vaultwarden-app --format '{{.Id}}'
+    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user restart vaultwarden.service    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${after} =    Execute Command    runagent -m ${APP} podman inspect vaultwarden-app --format '{{.Id}}'
+    Should Not Be Equal    ${before.strip()}    ${after.strip()}
+    Discovery is reachable from app
+
+Pasta gateway regression with trusted test certificate
+    ${backend} =    Execute Command    runagent -m ${APP} podman info --format '{{.Host.RootlessNetworkCmd}}'
+    Skip If    '${backend.strip()}' != 'pasta'    Requires pasta
+    ${fixture} =    Set Variable    /tmp/vw-network-${APP}
+    Execute Command    mkdir -p ${fixture}/tests/network ${fixture}/imageroot/pypkg
+    SSHLibrary.Put File    ${CURDIR}/../network/run.py    ${fixture}/tests/network/run.py
+    SSHLibrary.Put File    ${CURDIR}/../../imageroot/pypkg/vaultwarden_network.py    ${fixture}/imageroot/pypkg/vaultwarden_network.py
+    SSHLibrary.Put File    ${CURDIR}/../../imageroot/pypkg/vaultwarden_config.py    ${fixture}/imageroot/pypkg/vaultwarden_config.py
+    ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} sh -c 'VW_RUNTIME_IMAGE="$VAULTWARDEN_REWORKED_SERVER_IMAGE" python3 ${fixture}/tests/network/run.py'    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
 
 Revocation timer and private admin pages
     ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False

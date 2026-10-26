@@ -1,9 +1,18 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 26.10.2026. Veröffentlichte Vorabversion **0.1.0-rc.2**. Beide eigenständigen Pakete wurden auf NS8 Core 3.23.2 unter Debian 13 und Rocky 9 gemeinsam geprüft, jeweils 10/10 Tests. [Release-Prüfnachweise und Digests](RELEASE-0.1.0-rc.2.md). Die historischen Prototyp-Prüfungen bleiben separat dokumentiert.
+Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.3**, weiterhin mit
+**IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.3).
+Die gemeinsame Vorgängerversion rc.2 wurde auf NS8 Core 3.23.2 unter Debian 13
+und Rocky 9 geprüft; die [historischen Prüfnachweise](RELEASE-0.1.0-rc.2.md)
+bleiben erhalten. Hinweise zum Update: [Netzwerkkorrektur](NETWORK-FIX.md).
 Der unveränderte Upstream-IdP bietet weder den Parameter `access_group` von
 `alter-realm-client` noch die Aktion `get-client-access`. Nur SSO einzuschalten
 oder AD-Gruppen zu importieren beschränkt den Zugang noch nicht.
+
+**Ab rc.3:** Der lokale IdP-Zugriff unter `pasta` wird automatisch konfiguriert.
+rc.2 enthält diese Korrektur nicht. Den bisherigen Test-Drop-in erst nach
+Installation von rc.3 gemäß [Netzwerkkorrektur](NETWORK-FIX.md) entfernen.
 
 ## Zielkonfiguration
 
@@ -44,8 +53,9 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.2'
-VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_VERSION}"
+VW_VERSION='0.1.0-rc.3'
+VW_IDP_VERSION='0.1.0-rc.2'
+VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
 ```
 
@@ -198,6 +208,15 @@ runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden.service
 runagent -m vaultwarden-reworked1 podman ps
 ```
 
+Ab dem Entwicklungsstand nach rc.2 prüft `configure-module` bei
+`lets_encrypt:true` die OIDC-Discovery auch aus dem laufenden App-Container.
+Erfolg wird zusätzlich mit `oidc_verified:true` ausgegeben. Bei einem Fehler
+die gemeldete DNS-/HTTPS-/Netzwerkursache beheben und dieselbe Konfiguration
+erneut ausführen; Dienst und Timer können dabei bereits laufen. Bei manuell
+verwalteten Zertifikaten (`lets_encrypt:false`) wird dieser automatische Test
+nicht ausgeführt und `oidc_verified:false` ausgegeben. Zertifikat installieren
+und die Discovery separat aus dem Container prüfen, bevor Benutzer sich anmelden.
+
 Die dauerhafte Konfiguration liegt in `settings.json` und `vaultwarden.env`
 im Modul-State. `vaultwarden.env` enthält das Client-Secret und hat Modus 0600.
 Nicht ausgeben oder ins Repository kopieren. `get-configuration` liefert nur
@@ -282,6 +301,18 @@ In der aktuellen offiziellen Bitwarden-App die selbst gehostete Serveradresse
 Masterpasswort für den Tresor festlegen bzw. den vorhandenen Tresor damit
 entsperren. Die konkrete Oberfläche und Browser-Rückleitung vor einem Rollout
 mit den verwendeten App-Versionen testen.
+
+Die Serveradresse muss exakt der `host`-Einstellung von Vaultwarden entsprechen;
+hier nicht den IdP-Host oder den AD-Domänennamen eintragen. Benutzerdefinierte
+API-/Identitätsserver-URLs leer lassen, wenn keine separate Konfiguration
+vorgesehen ist. Die App kann die Organisationskennung automatisch vom Server
+übernehmen; diesen Wert unverändert lassen. Der AD-Domänenname ist keine
+manuell einzutragende Organisationskennung. Mit Android-App 2026.10.0 wurde
+dieser Ablauf auf dem Testtablet nach Korrektur der Serveradresse bestätigt.
+
+SSO verwendet das AD-Passwort auf der IdP-Seite. Anschließend entsperrt das
+eigene Masterpasswort den Tresor. Die direkte Passwortanmeldung anstelle von
+SSO ist durch `SSO_ONLY` gesperrt.
 
 Danach auf Android Biometrie einschalten und die Timeout-Aktion **Sperren**
 wählen. Solange das Konto angemeldet bleibt, braucht das lokale Entsperren

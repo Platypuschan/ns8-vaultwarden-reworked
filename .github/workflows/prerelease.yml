@@ -1,6 +1,11 @@
 name: Prepare prerelease
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the new RC after all tests pass (main only)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -94,6 +99,7 @@ jobs:
       install_args: ghcr.io/nethserver/core:3.23.2
       script: test-module-install.sh
   publish:
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
     needs: [build, protocol, qemu]
     runs-on: ubuntu-24.04
     permissions:
