@@ -11,9 +11,8 @@ TimeoutStartSec=120
 TimeoutStopSec=70
 ExecStartPre=/usr/local/bin/runagent prepare-network
 ExecStartPre=/usr/bin/podman volume create --ignore vaultwarden-data
-# A preexisting config.json can override the managed SSO-only policy. Fail
-# closed rather than deleting administrator data or silently accepting it.
-ExecStartPre=/usr/bin/podman run --rm --network=none --entrypoint=/bin/sh --volume vaultwarden-data:/data:ro ${VAULTWARDEN_REWORKED_SERVER_IMAGE} -ec "test ! -e /data/config.json"
+# NS8-managed values are read-only in the runtime; ordinary admin settings
+# can be saved in config.json and survive restart.
 ExecStartPre=/bin/rm -f %t/vaultwarden.ctr-id
 ExecStart=/usr/bin/podman run --sdnotify=conmon --detach --replace --name=vaultwarden-app \
     --cgroups=no-conmon --cidfile=%t/vaultwarden.ctr-id \

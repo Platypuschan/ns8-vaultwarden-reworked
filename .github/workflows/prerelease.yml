@@ -81,6 +81,20 @@ jobs:
           idp="$(cat IDP_IMAGE)"
           runtime="$(skopeo inspect --config "docker://$idp" | jq -r '.config.Labels["org.nethserver.images"] | split(" ")[0]')"
           IDP_SOURCE_ROOT="$PWD/.test-idp" IDP_RUNTIME_IMAGE="$runtime" VW_RUNTIME_IMAGE="$RUNTIME_REPO:$CANDIDATE" python3 tests/integration/run.py
+  admin-browser:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y podman
+      - run: npm install --prefix /tmp/vw-admin-browser --no-audit --no-fund playwright@1.64.1
+      - run: /tmp/vw-admin-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Automatic NS8 admin navigation and saved settings
+        env:
+          VW_RUNTIME_IMAGE: ${{ needs.build.outputs.runtime }}:${{ needs.build.outputs.candidate }}
+          PLAYWRIGHT_MODULE: file:///tmp/vw-admin-browser/node_modules/playwright/index.mjs
+        run: python3 tests/admin/browser.py
   qemu:
     needs: build
     strategy:
@@ -100,7 +114,7 @@ jobs:
       script: test-module-install.sh
   publish:
     if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
-    needs: [build, protocol, qemu]
+    needs: [build, protocol, admin-browser, qemu]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

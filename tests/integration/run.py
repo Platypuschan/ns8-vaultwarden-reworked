@@ -196,7 +196,7 @@ class LoginTests(unittest.TestCase):
         idprealm.ensure_client(cls.kc, 'ad.test', 'other1', redirect_uris=redirect)
         cls.policy = idpaccess.set_policy(cls.kc, 'ad.test', cls.kc.find_client('ad.test','vaultwarden1'),
             'services_vaultwarden')
-        env = dict(os.environ, DOMAIN=cls.vw_url, SSO_ENABLED='true', SSO_ONLY='true',
+        env = dict(os.environ, DOMAIN=cls.vw_url, SSO_ENABLED='true', SSO_ONLY='true', NS8_MANAGED_CONFIG='true',
             SSO_AUTHORITY=cls.url+'/realms/ad.test', SSO_CLIENT_ID='vaultwarden1',
             SSO_CLIENT_SECRET=cls.secret, SSO_SCOPES='profile email', SSO_PKCE='true',
             SIGNUPS_ALLOWED='false', SSO_SIGNUPS_ALLOWED='true', SSO_SIGNUPS_MATCH_EMAIL='false',
@@ -206,7 +206,7 @@ class LoginTests(unittest.TestCase):
         args = ['podman','run','-d','--name',cls.vaultwarden,'--network','host']
         env['ROCKET_PORT']=str(cls.vw_port)
         env['ROCKET_ADDRESS']='127.0.0.1'
-        for key in ('DOMAIN','SSO_ENABLED','SSO_ONLY','SSO_AUTHORITY','SSO_CLIENT_ID','SSO_CLIENT_SECRET',
+        for key in ('NS8_MANAGED_CONFIG','DOMAIN','SSO_ENABLED','SSO_ONLY','SSO_AUTHORITY','SSO_CLIENT_ID','SSO_CLIENT_SECRET',
                 'SSO_SCOPES','SSO_PKCE','SIGNUPS_ALLOWED','SSO_SIGNUPS_ALLOWED','SSO_SIGNUPS_MATCH_EMAIL',
                 'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION','ROCKET_PORT','ROCKET_ADDRESS','ADMIN_TOKEN'):
             args += ['--env',key]
@@ -544,6 +544,28 @@ class LoginTests(unittest.TestCase):
     def refresh(self, refresh_token):
         return requests.post(self.vw_url+'/identity/connect/token',data={
             'grant_type':'refresh_token','client_id':'mobile','refresh_token':refresh_token},timeout=20)
+
+    def test_19_admin_settings_persist_without_overriding_ns8_policy(self):
+        state_dir=tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree,state_dir)
+        api=vaultwarden_revoke.AdminAPI(self.vw_url,self.admin_token,state_dir)
+        api.users()
+        response=requests.post(self.vw_url+'/admin/config', cookies={'VW_ADMIN':api.cookie},
+            json={'password_hints_allowed':False, 'sso_enabled':False, 'sso_only':False,
+                'admin_token':'changed-by-admin', 'signups_allowed':True}, timeout=20)
+        self.assertEqual(response.status_code,200,response.text[:200])
+        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json').stdout)
+        self.assertFalse(saved['password_hints_allowed'])
+        for key in ('sso_enabled','sso_only','admin_token','signups_allowed'):
+            self.assertIsNone(saved.get(key))
+        cmd('podman','restart',self.vaultwarden)
+        wait_http(self.vw_url+'/alive',self.names)
+        api.cookie=None
+        api.users()
+        saved=json.loads(cmd('podman','exec',self.vaultwarden,'cat','/data/config.json').stdout)
+        self.assertFalse(saved['password_hints_allowed'])
+        _,r,target,_=self.auth('denied')
+        self.assertIsNone(target)
 
     def test_20_revocation_timer_logs_out_existing_sessions(self):
         """The revoke-access timer, with the real Vaultwarden admin API and

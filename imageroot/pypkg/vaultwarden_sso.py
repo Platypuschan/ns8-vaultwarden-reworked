@@ -17,15 +17,12 @@ def task(config, action, data):
 ADMIN_ROUTE_SUFFIX = '-admin'
 
 
-def block_admin_route(traefik, config):
-    """Route the admin pages apart from the application and allow only
-    the loopback address: Traefik denies them to every client. The
-    revoke-access timer calls them on the loopback port of the
-    container, without Traefik."""
+def configure_admin_route(traefik, config):
+    """Expose the authenticated admin UI; NS8 owners log in via open-admin."""
     response = agent.tasks.run(agent_id=traefik, action='set-route', data={
         'instance': os.environ['MODULE_ID'] + ADMIN_ROUTE_SUFFIX,
         'url': 'http://127.0.0.1:' + os.environ['TCP_PORT'],
-        'host': config['host'], 'path': '/admin', 'ip_allowlist': ['127.0.0.1/32'],
+        'host': config['host'], 'path': '/admin', 'ip_allowlist': [],
         'http2https': True, 'lets_encrypt': config['lets_encrypt']})
     agent.assert_exp(response['exit_code'] == 0, 'Traefik admin route configuration failed')
 

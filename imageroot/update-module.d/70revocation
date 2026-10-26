@@ -16,11 +16,16 @@ with agent.exclusive_file_lock('configuration'):
     with open('vaultwarden.env') as f:
         env = f.read()
     if not any(line.startswith('ADMIN_TOKEN=') for line in env.splitlines()):
-        policy.private_write('vaultwarden.env', env.rstrip('\n') + '\nADMIN_TOKEN=' + policy.admin_token() + '\n')
+        env = env.rstrip('\n') + '\nADMIN_TOKEN=' + policy.admin_token() + '\n'
+    if not any(line.startswith('NS8_MANAGED_CONFIG=') for line in env.splitlines()):
+        env = env.rstrip('\n') + '\nNS8_MANAGED_CONFIG=true\n'
+    if not any(line.startswith('ADMIN_RATELIMIT_MAX_BURST=') for line in env.splitlines()):
+        env = env.rstrip('\n') + '\nADMIN_RATELIMIT_MAX_BURST=30\n'
+    policy.private_write('vaultwarden.env', env)
     if subprocess.run(['systemctl', '--user', '-q', 'is-enabled', 'vaultwarden.service']).returncode == 0:
         with open('settings.json') as f:
             config = json.load(f)
         traefik = agent.resolve_agent_id('traefik@node')
         agent.assert_exp(traefik is not None, 'Traefik not found')
-        vaultwarden_sso.block_admin_route(traefik, config)
+        vaultwarden_sso.configure_admin_route(traefik, config)
         subprocess.run(['systemctl', '--user', 'enable', '--now', 'vaultwarden-revoke.timer'], check=True, stdout=sys.stderr)

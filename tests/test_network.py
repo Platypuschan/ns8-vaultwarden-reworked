@@ -96,7 +96,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
         sso.task = Mock(return_value={'enforced': True, 'enabled': True,
             'group_path': '/services_vaultwarden'})
         sso.prepare = Mock(return_value={'issuer': 'https://sso.test/realms/ad.test'})
-        sso.block_admin_route = Mock()
+        sso.configure_admin_route = Mock()
         output = io.StringIO()
         with patch.dict(sys.modules, {'agent': agent, 'agent.tasks': tasks, 'vaultwarden_sso': sso}), \
                 patch('builtins.open', mock_open(read_data=json.dumps(config))), \
