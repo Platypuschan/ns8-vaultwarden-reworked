@@ -10,3 +10,4 @@ if Path('vaultwarden.env').exists():
         config = policy.validate(json.loads(Path('settings.json').read_text()))
         sso.prepare(config)
         policy.require_policy(config, sso.task(config, 'get-client-access', {'domain': config['domain']}))
+        policy.rotate_worker_token()

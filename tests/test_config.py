@@ -19,6 +19,18 @@ class ConfigTests(unittest.TestCase):
             'client_id':'vaultwarden1','client_secret':'test-only-secret'}
         self.token='t'*64
 
+    def test_upgrade_rotates_only_the_formerly_exported_worker_credential(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vaultwarden.env'
+            path.write_text('ADMIN_TOKEN=previously-exported\nSSO_CLIENT_SECRET=keep-this\nDOMAIN=https://vault.example.test\n')
+            policy.rotate_worker_token(path)
+            values = dict(line.split('=', 1) for line in path.read_text().splitlines())
+            self.assertTrue(values['ADMIN_TOKEN'] != 'previously-exported')
+            self.assertRegex(values['ADMIN_TOKEN'], policy.ADMIN_TOKEN)
+            self.assertEqual(values['SSO_CLIENT_SECRET'], 'keep-this')
+            self.assertEqual(values['DOMAIN'], 'https://vault.example.test')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
     def test_sso_policy_cannot_fall_back_to_password(self):
         env=policy.environment(policy.validate(self.config),self.registration,self.token)
         parsed=dict(line.split('=',1) for line in env.splitlines())

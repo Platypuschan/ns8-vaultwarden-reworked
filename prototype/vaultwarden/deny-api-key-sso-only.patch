@@ -71,7 +71,7 @@ index ac05386..5ce7cbb 100644
              check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
              check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
 diff --git a/src/config.rs b/src/config.rs
-index 7d35461..c2035ea 100644
+index 7d35461..272b624 100644
 --- a/src/config.rs
 +++ b/src/config.rs
 @@ -21,6 +21,15 @@ use crate::{
@@ -109,16 +109,25 @@ index 7d35461..c2035ea 100644
                          self.$name = None;
                      }
                  )+)+
-@@ -393,7 +410,7 @@ macro_rules! make_config {
+@@ -393,10 +410,14 @@ macro_rules! make_config {
                          elements: vec![
                          $( // This repetition is for each element within a group
                              ElementData {
 -                                editable: $editable,
 +                                editable: $editable && !ns8_managed(stringify!($name)),
                                  name: stringify!($name),
-                                 value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
-                                 default: serde_json::to_value(&def.$name).unwrap_or_default(),
-@@ -1436,7 +1453,8 @@ impl Config {
+-                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
+-                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
++                                value: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
++                                    serde_json::Value::String("********".into())
++                                } else { serde_json::to_value(&cfg.$name).unwrap_or_default() },
++                                default: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
++                                    serde_json::Value::String("********".into())
++                                } else { serde_json::to_value(&def.$name).unwrap_or_default() },
+                                 r#type: get_form_type(stringify!($ty)),
+                                 doc: get_doc(concat!($($doc),+)),
+                                 overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
+@@ -1436,7 +1457,8 @@ impl Config {
      pub async fn load() -> Result<Self, Error> {
          // Loading from env and file
          let env = ConfigBuilder::from_env();

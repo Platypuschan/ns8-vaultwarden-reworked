@@ -67,6 +67,8 @@ try {
       assert(await frame.locator('#input_sso_enabled').isDisabled());
       assert(await frame.locator('#input_sso_enabled').isChecked());
       assert.notEqual(await frame.locator('#input_admin_token').getAttribute('readonly'), null);
+      assert.equal(await frame.locator('#input_admin_token').inputValue(), '********');
+      assert.equal(await frame.locator('#input_sso_client_secret').inputValue(), '********');
       if (role === 'owner1') {
         const result = await frame.evaluate(async data => {
           const response = await fetch('/admin/config', {method: 'POST',

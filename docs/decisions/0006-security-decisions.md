@@ -13,7 +13,10 @@ SSO-only API-key denial and managed-setting patches.
 [Upstream release](https://github.com/dani-garcia/vaultwarden/releases/tag/1.37.4).
 
 open-admin returns the URL, permitted frame ancestors and revoker status. It
-never exports ADMIN_TOKEN. The UI submits the current NS8 login token in a
+never exports ADMIN_TOKEN. Managed password fields are masked in both value
+and default in the rendered settings, including ADMIN_TOKEN and the SSO client
+secret. Upgrade rotates the internal worker token to invalidate copies exposed
+by previous releases; user credentials, SSO identity and vault keys are preserved. The UI submits the current NS8 login token in a
 POST body to the runtime. The runtime verifies it through the NS8 leader API
 and confirms that the authenticated identity is a current cluster owner.
 It stores the NS8 token only in process memory and gives the browser a random

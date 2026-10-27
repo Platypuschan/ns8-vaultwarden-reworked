@@ -114,3 +114,10 @@ def private_write(path, text):
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
+
+
+def rotate_worker_token(env_path='vaultwarden.env'):
+    """Invalidate the internal credential exported by pre-bridge releases."""
+    with open(env_path) as stream:
+        lines = [line for line in stream.read().splitlines() if not line.startswith('ADMIN_TOKEN=')]
+    private_write(env_path, '\n'.join(lines + ['ADMIN_TOKEN=' + secrets.token_urlsafe(48)]) + '\n')

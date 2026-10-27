@@ -73,6 +73,7 @@ class AdminBridge(unittest.TestCase):
     def test_02_each_request_checks_current_rights_and_revocation_is_immediate(self):
         session, response = self.login()
         self.assertEqual(response.status_code, 200, response.text[:200])
+        self.assertFalse(self.worker in response.text, 'Backend token must not be embedded in admin settings')
         self.assertTrue(session.cookies.get('NS8_ADMIN'))
         self.assertFalse(session.cookies.get('VW_ADMIN'))
         before = self.core.requests
