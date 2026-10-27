@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({headless: true,
-  args: ['--no-proxy-server', '--host-resolver-rules=MAP *.example.test 127.0.0.1']});
+  args: ['--no-proxy-server', '--host-resolver-rules=MAP *.example.test 127.0.0.1, MAP *.co.uk 127.0.0.1']});
 const base = process.env.TEST_BASE;
 const vault = base.replace('cluster.example.test', 'vault.example.test');
 const cluster = base + '/cluster-admin/';
@@ -42,15 +42,36 @@ try {
   console.log('Browser SSO link: no email step before the IdP');
   await direct.close();
 
-  for (const role of ['owner1', 'owner2', 'reader', 'tab']) {
+  for (const role of ['owner1', 'owner2', 'reader', 'tab', 'public-suffix']) {
     const context = await browser.newContext({ignoreHTTPSErrors: true});
     const page = await context.newPage();
-    await page.goto(cluster + '?role=' + role);
+    const manager = role === 'public-suffix' ? cluster.replace('cluster.example.test', 'cluster.two.co.uk') : cluster;
+    await page.goto(manager + '?role=' + role);
     if (role === 'reader') {
       const frame = page.frameLocator('iframe').first();
       await frame.locator('#status').filter({hasText: 'NS8-Administrator'}).waitFor();
       assert.equal(new URL(page.url()).hostname, 'cluster.example.test');
       console.log('Browser reader: no admin navigation');
+    } else if (role === 'public-suffix') {
+      const suffixVault = vault.replace('vault.example.test', 'vault.one.co.uk');
+      const application = page.frameLocator('iframe').first();
+      await application.locator('#open').filter({hasText: 'In neuem Tab öffnen'}).waitFor();
+      let embedded;
+      for (let i = 0; i < 100; i++) {
+        embedded = page.frames().find(frame => frame.url() === suffixVault + '/admin/');
+        if (embedded) break;
+        await page.waitForTimeout(100);
+      }
+      assert(embedded);
+      await embedded.locator('#config-form').waitFor();
+      const blocked = await embedded.evaluate(async () => (await fetch('/admin/users')).status);
+      assert.equal(blocked, 403, 'Strict cookie must be unavailable across two distinct co.uk sites');
+      const [tab] = await Promise.all([context.waitForEvent('page'), application.locator('#open').click()]);
+      await tab.waitForURL(suffixVault + '/admin/', {timeout: 30000});
+      await tab.locator('#config-form').waitFor();
+      assert.equal(await tab.evaluate(async () => (await fetch('/admin/users')).status), 200);
+      assert(page.url().startsWith(manager));
+      console.log('Browser public suffix: cross-site Strict cookie rejected, explicit tab authenticated successfully');
     } else if (role === 'tab') {
       const frame = page.frameLocator('iframe').first();
       await frame.locator('#status').filter({hasText: 'neuem Tab'}).waitFor();
