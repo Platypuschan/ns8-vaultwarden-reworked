@@ -1,10 +1,13 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 26.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.4**, weiterhin mit
+Stand: 27.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.5**, weiterhin mit
 **IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
-[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.4).
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.5).
+Die rc.5 öffnet die Adminoberfläche im Anwendungsbereich des Cluster-Managers und ist
+mit Neuinstallation und Update von rc.4 auf Debian13/Rocky9 je 15/15 geprüft;
+[aktuelle Nachweise](RELEASE-0.1.0-rc.5.md).
 Die rc.4 ist mit Neuinstallation, direktem Adminzugang und Update von rc.3
-auf Debian13/Rocky9 je 15/15 geprüft; [aktuelle Nachweise](RELEASE-0.1.0-rc.4.md).
+auf Debian13/Rocky9 je 15/15 geprüft; [Nachweise](RELEASE-0.1.0-rc.4.md).
 Die rc.3 ist mit Neuinstallation und Update von rc.2 auf Debian13/Rocky9 je
 14/14 geprüft; [aktuelle Nachweise](RELEASE-0.1.0-rc.3.md).
 Die gemeinsame Vorgängerversion rc.2 wurde auf NS8 Core 3.23.2 unter Debian 13
