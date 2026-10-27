@@ -82,6 +82,16 @@ class RevokeTests(unittest.TestCase):
         revoke.write_status(state_dir=self.dir.name)
         self.assertEqual(revoke.status(self.dir.name)['state'], 'ok')
 
+    def test_monitor_that_never_runs_warns_after_startup_grace(self):
+        from datetime import datetime, timezone, timedelta
+        revoke.initialize_status(self.dir.name)
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'pending')
+        path = Path(self.dir.name) / revoke.STATUS_FILE
+        data = json.loads(path.read_text())
+        data['monitor_started'] = (datetime.now(timezone.utc) - timedelta(minutes=7)).isoformat()
+        path.write_text(json.dumps(data))
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'warning')
+
     def test_members_filter_is_direct_and_excludes_disabled_accounts(self):
         f=revoke.members_filter('CN=g (x),DC=ad,DC=test','(!(sAMAccountName=svc))')
         self.assertIn('(memberOf=CN=g \\28x\\29,DC=ad,DC=test)',f)

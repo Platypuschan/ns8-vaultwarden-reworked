@@ -47,6 +47,13 @@ Install IdP and released Vaultwarden rc.4 for upgrade
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${APP}    ${data['module_id']}
 
+Public Keycloak admin paths are blocked while the home redirect remains public
+    ${ip} =    Execute Command    hostname -I | awk '{print $1}'
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/admin/realms
+    Should Be Equal    ${code}    403
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/realms/master/ns8-home
+    Should Be Equal    ${code}    302
+
 Create internal Samba domain
     ${out} =    Run task    cluster/add-internal-provider    {"image":"samba","node":1}
     Set Suite Variable    ${SAMBA}    ${out['module_id']}
@@ -94,6 +101,9 @@ Upgrade configured rc.4 to corrected package
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     ${worker_after} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
     Should Not Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
+    ${required} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${APP}"}
+    Should Be True    ${required['policy_required']}
+    Should Be True    ${required['policy_group_pinned']}
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
     # The update lets the cluster manager on the node embed the admin page.
@@ -146,10 +156,10 @@ Revocation timer and authenticated admin pages
     Should Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    # Admin login is reachable; administrative APIs still require a cookie.
+    # Anonymous admin navigation is denied; the NS8 UI uses its authenticated POST bridge.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin
-    Should Be Equal    ${code}    200
+    Should Be Equal    ${code}    403
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/alive
     Should Be Equal    ${code}    200
     # The timer service binds to LDAP and logs in to the admin API

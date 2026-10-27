@@ -220,6 +220,16 @@ def read_admin_token(env_path='vaultwarden.env'):
 
 STATUS_FILE = 'revocation-status.json'
 
+def initialize_status(state_dir='.'):
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from vaultwarden_config import private_write
+    path = Path(state_dir) / STATUS_FILE
+    if not path.exists():
+        private_write(path, json.dumps({'monitor_started': datetime.now(timezone.utc).isoformat(),
+            'last_success': None, 'last_error': None, 'consecutive_errors': 0}))
+
+
 def write_status(error=None, report=None, state_dir='.'):
     from datetime import datetime, timezone
     from vaultwarden_config import private_write
@@ -248,14 +258,17 @@ def status(state_dir='.'):
     from pathlib import Path
     try:
         result = json.loads((Path(state_dir) / STATUS_FILE).read_text())
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError:
         return {'state': 'pending', 'last_success': None, 'consecutive_errors': 0}
+    except ValueError:
+        return {'state': 'warning', 'last_success': None, 'consecutive_errors': 0}
     if not isinstance(result, dict):
         return {'state': 'warning', 'last_success': None, 'consecutive_errors': 0}
     success = result.get('last_success')
+    baseline = success or result.get('monitor_started')
     try:
-        stale = not success or (datetime.now(timezone.utc) - datetime.fromisoformat(success)).total_seconds() > 360
+        stale = not baseline or (datetime.now(timezone.utc) - datetime.fromisoformat(baseline)).total_seconds() > 360
     except (ValueError, TypeError):
         stale = True
-    result['state'] = 'warning' if stale or result.get('consecutive_errors', 0) >= 3 else 'ok'
+    result['state'] = 'warning' if stale or result.get('consecutive_errors', 0) >= 3 else ('ok' if success else 'pending')
     return result

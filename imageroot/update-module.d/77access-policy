@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Pin the existing policy before starting the stateless revocation worker."""
 import json
+import subprocess
+import vaultwarden_revoke as revoke
 from pathlib import Path
 import agent
 import vaultwarden_config as policy
@@ -11,3 +13,5 @@ if Path('vaultwarden.env').exists():
         sso.prepare(config)
         policy.require_policy(config, sso.task(config, 'get-client-access', {'domain': config['domain']}))
         policy.rotate_worker_token()
+        if subprocess.run(['systemctl', '--user', '-q', 'is-enabled', 'vaultwarden.service']).returncode == 0:
+            revoke.initialize_status()

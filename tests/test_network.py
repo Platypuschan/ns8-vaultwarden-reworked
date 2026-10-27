@@ -105,6 +105,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
                 patch.object(sys, 'stdout', output), \
                 patch.dict('os.environ', {'MODULE_ID': 'vaultwarden1', 'TCP_PORT': '20001'}), \
                 patch('subprocess.run'), \
+                patch('vaultwarden_revoke.initialize_status'), \
                 patch.object(network, 'check_discovery',
                     side_effect=ValueError('OIDC discovery failed') if failure else None) as check:
             if failure:

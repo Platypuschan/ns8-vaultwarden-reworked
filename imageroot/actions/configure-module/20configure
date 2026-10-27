@@ -8,6 +8,7 @@ import agent.tasks
 import vaultwarden_config as policy
 import vaultwarden_sso
 import vaultwarden_network
+import vaultwarden_revoke
 
 config = policy.validate(json.load(sys.stdin))
 with agent.exclusive_file_lock('configuration'):
@@ -30,6 +31,7 @@ with agent.exclusive_file_lock('configuration'):
     subprocess.run(['systemctl', '--user', 'enable', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'reset-failed', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+    vaultwarden_revoke.initialize_status()
     subprocess.run(['systemctl', '--user', 'enable', '--now', 'vaultwarden-revoke.timer'], check=True, stdout=sys.stderr)
     # Automatic HTTPS must be usable from the application itself, not just
     # from the host. Manually managed certificates may still need installing.
