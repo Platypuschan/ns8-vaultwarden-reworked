@@ -52,8 +52,14 @@ changed by P17A.
 ## Revocation (P6/P7/P8/P9/P10/P14)
 
 Deploy the matching hardened IdP first. Registration enables access_required;
-configuration and update require policy_required and policy_group_pinned in
-addition to the enforced, enabled, matching group. An older IdP cannot silently
+configuration and update require policy_required, policy_group_pinned and
+policy_consumer_bound in addition to the enforced, enabled, matching group.
+Vaultwarden registers expected_access_group from its own required_group setting.
+An ordinary IdP policy edit cannot move that independent expectation: it closes
+access until the original policy is restored, or explicit module reconfiguration
+registers the newly intended group. A preflight may accept only this single
+binding mismatch for a proposed matching group; the runtime worker always
+requires the fully enforced binding. An older IdP cannot silently
 activate the stateless worker. The timer checks the policy each run. A definite
 mismatch logs out all accounts and reports failure.
 

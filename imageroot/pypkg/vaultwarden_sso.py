@@ -50,6 +50,7 @@ def prepare(config):
         # lifespan than 10 minutes makes them refresh on every request
         'access_token_lifespan': 600,
         'access_required': True,
+        'expected_access_group': config['required_group'],
     })
     env = policy.environment(config, registration, policy.admin_token(),
         policy.frame_ancestors(cluster_hostnames()))

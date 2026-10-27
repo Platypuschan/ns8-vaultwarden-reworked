@@ -104,6 +104,7 @@ Upgrade configured rc.4 to corrected package
     ${required} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${APP}"}
     Should Be True    ${required['policy_required']}
     Should Be True    ${required['policy_group_pinned']}
+    Should Be True    ${required['policy_consumer_bound']}
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
     # The update lets the cluster manager on the node embed the admin page.

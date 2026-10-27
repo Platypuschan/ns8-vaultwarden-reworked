@@ -74,9 +74,14 @@ def environment(config, registration, admin_token, ancestors=''):
 
 
 def require_policy(config, state, require_binding=True):
-    if require_binding and (state.get('policy_required') is not True or state.get('policy_group_pinned') is not True):
+    if require_binding and 'policy_consumer_bound' not in state:
         raise ValueError('Update the IdP module first: required group protection is unavailable')
-    if (state.get('enforced') is not True or state.get('enabled') is not True
+    if require_binding and any(state.get(field) is not True for field in
+            ('policy_required', 'policy_group_pinned', 'policy_consumer_bound')):
+        raise ValueError('IdP group policy is not bound to the configured group')
+    enforced = state.get('enforced') is True or (not require_binding
+        and state.get('enforced') is False and set(state.get('issues') or []) == {'expected_group_mismatch'})
+    if (not enforced or state.get('enabled') is not True
             or state.get('group_path') != '/' + config['required_group']):
         raise ValueError('IdP group policy is missing, disabled or differs from required_group')
 

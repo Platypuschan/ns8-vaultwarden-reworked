@@ -94,7 +94,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
         agent.resolve_agent_id = Mock(return_value='module/traefik1')
         agent.assert_exp = lambda condition, message: self.assertTrue(condition, message)
         sso = types.ModuleType('vaultwarden_sso')
-        sso.task = Mock(return_value={'enforced': True, 'enabled': True, 'policy_required': True, 'policy_group_pinned': True,
+        sso.task = Mock(return_value={'enforced': True, 'enabled': True, 'policy_required': True, 'policy_group_pinned': True, 'policy_consumer_bound': True,
             'group_path': '/services_vaultwarden'})
         sso.prepare = Mock(return_value={'issuer': 'https://sso.test/realms/ad.test'})
         sso.configure_admin_route = Mock()

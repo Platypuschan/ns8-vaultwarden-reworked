@@ -34,7 +34,7 @@ class BindingTests(unittest.TestCase):
                 with patch.object(module.policy,'private_write') as write, \
                         patch.object(module.policy,'admin_token',return_value='t'*64), \
                         patch.object(module.socket,'getfqdn',return_value='node2.example.test'):
-                    module.prepare({'host':'vault.test','domain':'ad.test','idp_module':'idp1'})
+                    module.prepare({'host':'vault.test','domain':'ad.test','idp_module':'idp1','required_group':'services_vaultwarden'})
             self.env=dict(line.split('=',1) for line in write.call_args_list[0].args[1].splitlines())
         finally:
             sys.path.pop(0)
@@ -45,6 +45,7 @@ class BindingTests(unittest.TestCase):
         agent.bind_user_domains.assert_not_called()
         self.assertEqual(tasks.run.call_args.kwargs['action'],'register-client')
         self.assertEqual(tasks.run.call_args.kwargs['data']['access_token_lifespan'],600)
+        self.assertEqual(tasks.run.call_args.kwargs['data']['expected_access_group'],'services_vaultwarden')
         self.assertEqual(self.env['ALLOWED_IFRAME_ANCESTORS'],'https://node1.example.test https://node2.example.test')
 
     def test_new_binding_is_established_before_registration(self):

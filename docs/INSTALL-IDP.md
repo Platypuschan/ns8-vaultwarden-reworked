@@ -284,7 +284,8 @@ sich über seine NS8-Sitzung an; jede geschützte Anfrage prüft aktuelle
 Cluster-Adminrechte. Der Widerrufsstatus steht in `get-configuration` unter
 `revocation`; wiederholte Fehler oder ein veralteter letzter Erfolg warnen auch
 beim Öffnen des Moduls. Der neue Worker benötigt den passenden gehärteten IdP
-mit `policy_required:true` und `policy_group_pinned:true`.
+mit `policy_required:true`, `policy_group_pinned:true` und
+`policy_consumer_bound:true`.
 [Verhalten, Update-Reihenfolge und Grenzen](decisions/0006-security-decisions.md).
 
 ```bash

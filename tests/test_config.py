@@ -31,6 +31,19 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(values['DOMAIN'], 'https://vault.example.test')
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_policy_changes_require_explicit_matching_reconfiguration(self):
+        state = {'enforced': False, 'enabled': True, 'group_path': '/services_vaultwarden',
+            'issues': ['expected_group_mismatch'], 'policy_required': True,
+            'policy_group_pinned': False, 'policy_consumer_bound': True}
+        # Preflight may validate the newly proposed group before registration
+        # binds it; the runtime worker must still reject this state.
+        policy.require_policy(self.config, state, require_binding=False)
+        with self.assertRaises(ValueError):
+            policy.require_policy(self.config, state)
+        state['group_path'] = '/some-other-group'
+        with self.assertRaises(ValueError):
+            policy.require_policy(self.config, state, require_binding=False)
+
     def test_sso_policy_cannot_fall_back_to_password(self):
         env=policy.environment(policy.validate(self.config),self.registration,self.token)
         parsed=dict(line.split('=',1) for line in env.splitlines())
@@ -87,10 +100,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_unprotected_or_wrong_group_rejected(self):
         for state in [{},{'enforced':False},{'enforced':True,'enabled':False,'group_path':'/services_vaultwarden'},
-                      {'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'group_path':'/other'}]:
+                      {'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'policy_consumer_bound':True,'group_path':'/other'}]:
             with self.subTest(state=state),self.assertRaises(ValueError):
                 policy.require_policy(self.config,state)
-        policy.require_policy(self.config,{'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'group_path':'/services_vaultwarden'})
+        policy.require_policy(self.config,{'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'policy_consumer_bound':True,'group_path':'/services_vaultwarden'})
 
     def test_secret_write_is_private_and_replaces_atomically(self):
         with tempfile.TemporaryDirectory() as d:
