@@ -60,7 +60,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.4'
+VW_VERSION='0.1.0-rc.5'
 VW_IDP_VERSION='0.1.0-rc.2'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
