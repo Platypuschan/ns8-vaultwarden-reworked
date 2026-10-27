@@ -16,7 +16,7 @@ with agent.exclusive_file_lock('configuration'):
     if any(config[k] != previous[k] for k in ('host', 'domain', 'idp_module')):
         raise ValueError('Prepare SSO first; host/domain/IdP migrations are outside this prototype')
     state = vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']})
-    policy.require_policy(config, state)
+    policy.require_policy(config, state, require_binding=False)
     # Client registration preserves the IdP flow overrides and access attributes.
     registration = vaultwarden_sso.prepare(config)
     policy.require_policy(config, vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']}))

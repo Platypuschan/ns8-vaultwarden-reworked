@@ -4,8 +4,6 @@
   const status = document.getElementById("status");
   const button = document.getElementById("open");
   const tabName = "vaultwarden-admin";
-  // SameSite=Strict admin cookies only work in a frame of the same site.
-  const site = host => host.split(".").slice(-2).join(".");
   let newTab = false;
   async function openAdmin(tab) {
     button.disabled = true;
@@ -38,12 +36,14 @@
           extra: { title: "Vaultwarden öffnen", isNotificationHidden: true, eventId }
         }).catch(reject);
       });
+      const warning = document.getElementById("warning");
+      warning.textContent = result.revocation && result.revocation.state === "warning"
+        ? "Der automatische Zugriffswiderruf ist gestört. Bitte den Modulstatus prüfen." : "";
       const destination = new URL(result.url);
       if (destination.protocol !== "https:" || destination.pathname !== "/admin/" || destination.username || destination.password)
         throw new Error("Ungültige Adminadresse.");
       const cluster = window.parent.location;
-      const embed = (result.frame_ancestors || []).includes(cluster.origin)
-        && site(cluster.hostname) === site(destination.hostname);
+      const embed = !tab && (result.frame_ancestors || []).includes(cluster.origin);
       if (!embed && !tab) {
         // Browsers block tabs opened without a click.
         newTab = true;
@@ -53,17 +53,26 @@
       form.method = "POST";
       form.action = destination.href;
       // Inside the application frame; never replace the cluster manager.
-      form.target = embed ? "_self" : tabName;
+      if (embed && !document.getElementById("admin-frame")) {
+        const frame = document.createElement("iframe");
+        frame.id = frame.name = "admin-frame";
+        frame.title = "Vaultwarden Administration";
+        frame.style.cssText = "width:100%;height:85vh;border:0";
+        document.body.appendChild(frame);
+      }
+      form.target = embed ? "admin-frame" : tabName;
+      const login = JSON.parse(window.parent.localStorage.getItem("loginInfo") || "null");
+      if (!login || typeof login.token !== "string") throw new Error("Bitte erneut im Cluster-Manager anmelden.");
       form.hidden = true;
       for (const key of ["token"]) {
         const input = document.createElement("input");
-        input.type = "hidden"; input.name = key; input.value = result[key];
+        input.type = "hidden"; input.name = key; input.value = login.token;
         form.appendChild(input);
       }
       document.body.appendChild(form);
       form.submit();
       form.remove();
-      result.token = null;
+      if (embed) newTab = true;
       status.textContent = "Adminoberfläche geöffnet.";
     } catch (error) {
       if (tab) tab.close();

@@ -2,7 +2,11 @@
 import json
 import sys
 from pathlib import Path
+import vaultwarden_revoke as revoke
 if Path('settings.json').exists():
-    with open('settings.json') as f: json.dump(json.load(f), sys.stdout)
+    with open('settings.json') as f:
+        config = json.load(f)
+    config['revocation'] = revoke.status()
+    json.dump(config, sys.stdout)
 else:
     json.dump({'configured': False}, sys.stdout)

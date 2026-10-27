@@ -26,7 +26,8 @@ class AdminTests(unittest.TestCase):
                 patch.object(sys, 'stdout', output):
             runpy.run_path(str(ROOT / 'imageroot/actions/open-admin/20open'))
         self.assertEqual(json.loads(output.getvalue()), {
-            'url': 'https://vault.example.test/admin/', 'token': 't' * 64,
+            'url': 'https://vault.example.test/admin/',
+            'revocation': {'state': 'pending', 'last_success': None, 'consecutive_errors': 0},
             'frame_ancestors': ['https://node1.example.test', 'https://node2.example.test']})
 
     def test_installation_without_frame_ancestors_opens_a_tab(self):

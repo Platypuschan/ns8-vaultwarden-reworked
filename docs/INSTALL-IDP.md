@@ -270,19 +270,22 @@ weiteres Zutun bis zum Ablauf des IdP-Tokens (600 Sekunden) bestehen. Der
 Benutzer-Timer `vaultwarden-revoke.timer` des Moduls gleicht deshalb alle zwei
 Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
 
-- Konten, deren `mail` nicht mehr zu einem aktivierten, direkten Mitglied der
-  Gruppe gehört, werden in Vaultwarden deaktiviert. Das löscht alle Geräte des
-  Kontos, setzt den Security-Stamp zurück und meldet verbundene Clients ab.
-- Wird der Benutzer wieder Mitglied, aktiviert der Timer das Konto erneut. Von
-  einem Administrator deaktivierte Konten bleiben deaktiviert
-  (`revoked-users.json` im Modul-State merkt sich die vom Timer gesperrten).
-- Ist das AD nicht erreichbar oder fehlt die Gruppe, ändert der Timer nichts
-  und protokolliert einen Fehler; neue Anmeldungen verweigert dann der IdP.
+- Benutzer, deren `mail` nicht mehr zu einem aktivierten, direkten Mitglied
+  gehört, werden über die Deauth-API abgemeldet. Der Timer ändert keine
+  administrativen Kontosperren und aktiviert keine Konten automatisch.
+- Nach Gruppenwiederaufnahme kann sich ein weiterhin aktiviertes Konto wieder
+  anmelden. Alte automatische Sperren in `revoked-users.json` müssen zunächst
+  manuell geprüft werden; der neue Worker hebt sie nicht eigenständig auf.
+- Bei einer definitiv fehlenden oder abweichenden IdP-Pflichtpolicy beendet der
+  Timer alle Sitzungen. LDAP-/Transportfehler werden im Status ausgewiesen.
 
-Der Timer nutzt die Vaultwarden-Admin-API über den Loopback-Port des Moduls
-mit einem zufälligen `ADMIN_TOKEN` in `vaultwarden.env` (nur dort, Modus 0600).
-Ab rc.4 kann jeder NS8-Administrator die Adminoberfläche direkt über das Vaultwarden-Modul im Cluster-Manager öffnen. Die Modulaktion `open-admin` nutzt die vorhandenen NS8-Owner-Rechte und meldet den Browser automatisch an; Token müssen weder ausgelesen noch eingegeben werden. `/admin` ist erreichbar, administrative Funktionen benötigen weiterhin eine gültige Admin-Sitzung. Vaultwarden protokolliert beim Start eine
-Warnung, weil der Token nicht als Argon2-Hash hinterlegt ist.
+Der interne `ADMIN_TOKEN` bleibt ausschließlich im Modul. Der Browser meldet
+sich über seine NS8-Sitzung an; jede geschützte Anfrage prüft aktuelle
+Cluster-Adminrechte. Der Widerrufsstatus steht in `get-configuration` unter
+`revocation`; wiederholte Fehler oder ein veralteter letzter Erfolg warnen auch
+beim Öffnen des Moduls. Der neue Worker benötigt den passenden gehärteten IdP
+mit `policy_required:true` und `policy_group_pinned:true`.
+[Verhalten, Update-Reihenfolge und Grenzen](decisions/0006-security-decisions.md).
 
 ```bash
 runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden-revoke.timer

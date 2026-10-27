@@ -173,7 +173,7 @@ class LoginTests(unittest.TestCase):
                 'group.name.ldap.attribute':'cn', 'groups.dn':'DC=ad,DC=test',
                 'group.object.classes':'group', 'preserve.group.inheritance':'false',
                 'membership.ldap.attribute':'member', 'membership.attribute.type':'DN',
-                'membership.user.ldap.attribute':'cn', 'mode':'READ_ONLY',
+                'membership.user.ldap.attribute':'cn', 'mode':'LDAP_ONLY',
                 'user.roles.retrieve.strategy':'LOAD_GROUPS_BY_MEMBER_ATTRIBUTE',
                 'drop.non.existing.groups.during.sync':'false'
             }.items()}})
@@ -550,7 +550,7 @@ class LoginTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree,state_dir)
         api=vaultwarden_revoke.AdminAPI(self.vw_url,self.admin_token,state_dir)
         api.users()
-        response=requests.post(self.vw_url+'/admin/config', cookies={'VW_ADMIN':api.cookie},
+        response=requests.post(self.vw_url+'/admin/config', cookies={'VW_ADMIN':api.cookie}, headers={'X-NS8-Worker': self.admin_token},
             json={'password_hints_allowed':False, 'sso_enabled':False, 'sso_only':False,
                 'admin_token':'changed-by-admin', 'signups_allowed':True}, timeout=20)
         self.assertEqual(response.status_code,200,response.text[:200])
@@ -583,32 +583,32 @@ class LoginTests(unittest.TestCase):
         self.assertEqual(session.status_code,200,session.text[:300])
         self.assertEqual(members(),{'allowed@example.test'})
         # Nothing to do while the user is a member
-        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'disabled':[],'enabled':[]})
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'legacy_disabled':0})
         self.assertEqual(self.refresh(session.json()['refresh_token']).status_code,200)
         cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','allowed')
         try:
             self.assertEqual(members(),set())
             report=vaultwarden_revoke.reconcile(api,members(),state_dir)
-            self.assertEqual(report,{'disabled':['allowed@example.test'],'enabled':[]})
+            self.assertEqual(report,{'deauthenticated':1,'legacy_disabled':0})
             account=next(u for u in api.users() if u['email']=='allowed@example.test')
-            self.assertFalse(account['userEnabled'])
+            self.assertTrue(account['userEnabled'])
             # The existing device session cannot be refreshed any more
             refreshed=self.refresh(session.json()['refresh_token'])
             self.assertNotEqual(refreshed.status_code,200,refreshed.text[:300])
             self.assertNotIn('access_token',refreshed.json())
         finally:
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
-        # Member again: enabled at the next run, and a new login works
+        # Member again: the account was never disabled; a new login works
         report=vaultwarden_revoke.reconcile(api,members(),state_dir)
-        self.assertEqual(report,{'disabled':[],'enabled':['allowed@example.test']})
+        self.assertEqual(report,{'deauthenticated':0,'legacy_disabled':0})
         session=self.mobile_login('allowed')
         self.assertEqual(session.status_code,200,session.text[:300])
         # An account disabled by an administrator stays disabled
         account=next(u for u in api.users() if u['email']=='allowed@example.test')
-        api.disable(account['id'])
-        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'disabled':[],'enabled':[]})
+        api.request('POST', '/admin/users/' + account['id'] + '/disable')
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'legacy_disabled':0})
         self.assertFalse(next(u for u in api.users() if u['id']==account['id'])['userEnabled'])
-        api.enable(account['id'])
+        api.request('POST', '/admin/users/' + account['id'] + '/enable')
         # The admin session cookie is kept for the next runs
         self.assertTrue(Path(state_dir,vaultwarden_revoke.SESSION_FILE).read_text())
         # A missing group changes nothing

@@ -75,10 +75,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_unprotected_or_wrong_group_rejected(self):
         for state in [{},{'enforced':False},{'enforced':True,'enabled':False,'group_path':'/services_vaultwarden'},
-                      {'enforced':True,'enabled':True,'group_path':'/other'}]:
+                      {'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'group_path':'/other'}]:
             with self.subTest(state=state),self.assertRaises(ValueError):
                 policy.require_policy(self.config,state)
-        policy.require_policy(self.config,{'enforced':True,'enabled':True,'group_path':'/services_vaultwarden'})
+        policy.require_policy(self.config,{'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'group_path':'/services_vaultwarden'})
 
     def test_secret_write_is_private_and_replaces_atomically(self):
         with tempfile.TemporaryDirectory() as d:

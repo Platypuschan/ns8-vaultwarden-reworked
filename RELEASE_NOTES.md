@@ -1,3 +1,7 @@
+# Unreleased security work
+
+Runtime and policy/admin hardening selected on 27 October 2026; see docs/decisions/0006-security-decisions.md. No new release or production deployment.
+
 Fünfte Vorabversion von Vaultwarden Reworked für NethServer 8.
 
 - Die Adminoberfläche öffnet sich im Anwendungsbereich des Cluster-Managers, statt den ganzen Browser-Tab zu ersetzen. Der Cluster-Manager bleibt geöffnet.

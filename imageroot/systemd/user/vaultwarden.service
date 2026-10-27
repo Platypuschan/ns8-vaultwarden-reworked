@@ -19,6 +19,7 @@ ExecStart=/usr/bin/podman run --sdnotify=conmon --detach --replace --name=vaultw
     $VAULTWARDEN_NETWORK_ARGS \
     --publish=127.0.0.1:${TCP_PORT}:80 \
     --volume=vaultwarden-data:/data:Z \
+    --env=NS8_CORE_API=${NS8_CORE_API} \
     --env-file=./vaultwarden.env \
     ${VAULTWARDEN_REWORKED_SERVER_IMAGE}
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/vaultwarden.ctr-id -t 20

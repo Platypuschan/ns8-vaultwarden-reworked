@@ -50,8 +50,9 @@ class NetworkTests(unittest.TestCase):
                 self.assertIn('sso.test:host-gateway', path.read_text())
                 rdb.hget.return_value = '3'
                 network.prepare_network(self.config, self.issuer, rdb, '2')
-                self.assertEqual(path.read_text(), 'VAULTWARDEN_NETWORK_ARGS=\n')
-        rdb.hget.assert_called_with('cluster/module_node', 'idp-reworked1')
+                self.assertNotIn('sso.test:host-gateway', path.read_text())
+                self.assertIn('NS8_CORE_API=http://ns8-cluster-api:9311', path.read_text())
+        rdb.hget.assert_any_call('cluster/module_node', 'idp-reworked1')
 
     def test_issuer_read_does_not_split_query_or_secret_values(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -93,7 +94,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
         agent.resolve_agent_id = Mock(return_value='module/traefik1')
         agent.assert_exp = lambda condition, message: self.assertTrue(condition, message)
         sso = types.ModuleType('vaultwarden_sso')
-        sso.task = Mock(return_value={'enforced': True, 'enabled': True,
+        sso.task = Mock(return_value={'enforced': True, 'enabled': True, 'policy_required': True, 'policy_group_pinned': True,
             'group_path': '/services_vaultwarden'})
         sso.prepare = Mock(return_value={'issuer': 'https://sso.test/realms/ad.test'})
         sso.configure_admin_route = Mock()

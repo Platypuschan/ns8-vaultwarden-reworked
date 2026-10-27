@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 import vaultwarden_config as policy
-from vaultwarden_revoke import read_admin_token
+import vaultwarden_revoke as revoke
 
 with open('settings.json') as stream:
     config = policy.validate(json.load(stream))
@@ -14,4 +14,4 @@ if subprocess.run(['systemctl', '--user', 'is-active', '--quiet', 'vaultwarden.s
 # The UI embeds the admin page only for cluster manager origins Vaultwarden allows.
 ancestors = (policy.env_value('ALLOWED_IFRAME_ANCESTORS') or '').split()
 json.dump({'url': 'https://' + config['host'] + '/admin/',
-    'token': read_admin_token(), 'frame_ancestors': ancestors}, sys.stdout)
+    'frame_ancestors': ancestors, 'revocation': revoke.status()}, sys.stdout)

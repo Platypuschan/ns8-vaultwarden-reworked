@@ -1,17 +1,7 @@
-"""Revocation of Vaultwarden accounts whose users left the AD group.
+"""Log out nonmembers without changing administrative account locks.
 
-The IdP denies new logins and token refreshes to users outside the
-group, but an existing Vaultwarden session lasts until its IdP access
-token expires. The revoke-access timer closes that gap: it disables the
-Vaultwarden account of every user that is no longer a direct, enabled
-member of the group, which logs out all its devices, and enables it
-again when the user is a member again. Accounts are matched by e-mail
-address, the AD mail attribute.
-
-Only accounts disabled by the timer are enabled again: an account that
-an administrator disabled stays disabled. Offline copies of a vault on
-the devices are not erased: the Bitwarden clients delete them only when
-they connect and are logged out.
+AD accounts and mail accounts are linked by deployment policy. The worker
+uses their mail address for the existing Vaultwarden account mapping.
 """
 import ipaddress
 import json
@@ -91,7 +81,7 @@ def group_member_mails(settings, group):
         raise RevokeError(f'Cannot connect to the user domain: {type(error).__name__}') from None
     try:
         connection.search(search_base=settings['base_dn'],
-            search_filter=f'(&(objectCategory=group)(sAMAccountName={escape_filter_chars(group)}))',
+            search_filter=f'(&(objectCategory=group)(cn={escape_filter_chars(group)}))',
             search_scope=SUBTREE, attributes=['distinguishedName'], size_limit=2)
         if len(connection.entries) != 1:
             raise RevokeError(f'The AD group {group!r} was not found exactly once')
@@ -133,7 +123,7 @@ class AdminAPI:
             self.cookie = None
 
     def _open(self, method, path, body=None, headers=None):
-        request = urllib.request.Request(self.base_url + path, data=body, method=method, headers=headers or {})
+        request = urllib.request.Request(self.base_url + path, data=body, method=method, headers=dict(headers or {}, **{'X-NS8-Worker': self.token}))
         opener = urllib.request.build_opener(_NoRedirect())
         try:
             with opener.open(request, timeout=30) as response:
@@ -180,11 +170,8 @@ class AdminAPI:
     def users(self):
         return self.request('GET', '/admin/users')
 
-    def disable(self, user_id):
-        self.request('POST', f'/admin/users/{urllib.parse.quote(user_id)}/disable')
-
-    def enable(self, user_id):
-        self.request('POST', f'/admin/users/{urllib.parse.quote(user_id)}/enable')
+    def deauth(self, user_id):
+        self.request('POST', f'/admin/users/{urllib.parse.quote(user_id, safe="")}/deauth')
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -202,41 +189,23 @@ def _load_revoked(state_dir):
             return json.load(f)
     except FileNotFoundError:
         return {}
-
-
-def _save_revoked(state_dir, revoked):
-    path = os.path.join(state_dir, REVOKED_FILE)
-    temporary = path + '.tmp'
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w') as f:
-        json.dump(revoked, f)
-    os.replace(temporary, path)
+    except (ValueError, OSError):
+        return None
 
 
 def reconcile(api, members, state_dir='.'):
-    """Disable the accounts of non-members and enable again the accounts
-    the timer disabled whose users are members again. members is the set
-    of lower-case mail addresses of the group members. Return a report."""
-    revoked = _load_revoked(state_dir)
-    report = {'disabled': [], 'enabled': []}
+    """End the sessions of nonmembers. Never disable or re-enable accounts.
+
+    Legacy disabled accounts stay disabled for administrative review; the
+    old journal is retained, but is no longer an authority to enable anyone.
+    """
+    legacy = _load_revoked(state_dir)
+    report = {'deauthenticated': 0, 'legacy_disabled': len(legacy) if isinstance(legacy, dict) else None}
     for user in api.users():
-        user_id, email = user['id'], (user.get('email') or '').strip().lower()
-        member = bool(email) and email in members
-        if not member and user.get('userEnabled'):
-            # Disabling logs out every device of the account
-            api.disable(user_id)
-            revoked[user_id] = email
-            _save_revoked(state_dir, revoked)
-            report['disabled'].append(email)
-        elif member and not user.get('userEnabled') and user_id in revoked:
-            api.enable(user_id)
-            del revoked[user_id]
-            _save_revoked(state_dir, revoked)
-            report['enabled'].append(email)
-        elif user.get('userEnabled') and user_id in revoked:
-            # Enabled again by an administrator
-            del revoked[user_id]
-            _save_revoked(state_dir, revoked)
+        email = (user.get('email') or '').strip().lower()
+        if not email or email not in members:
+            api.deauth(user['id'])
+            report['deauthenticated'] += 1
     return report
 
 
@@ -247,3 +216,46 @@ def read_admin_token(env_path='vaultwarden.env'):
             if name == 'ADMIN_TOKEN' and value:
                 return value
     raise RevokeError('ADMIN_TOKEN is missing in vaultwarden.env')
+
+
+STATUS_FILE = 'revocation-status.json'
+
+def write_status(error=None, report=None, state_dir='.'):
+    from datetime import datetime, timezone
+    from vaultwarden_config import private_write
+    from pathlib import Path
+    path = Path(state_dir) / STATUS_FILE
+    try:
+        previous = json.loads(path.read_text())
+    except (FileNotFoundError, ValueError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    now = datetime.now(timezone.utc).isoformat()
+    status = {
+        'last_attempt': now,
+        'last_success': previous.get('last_success') if error else now,
+        'last_error': error,
+        'consecutive_errors': previous.get('consecutive_errors', 0) + 1 if error else 0,
+        'legacy_disabled': (report or {}).get('legacy_disabled', previous.get('legacy_disabled', 0)),
+    }
+    private_write(path, json.dumps(status))
+    return status
+
+
+def status(state_dir='.'):
+    from datetime import datetime, timezone
+    from pathlib import Path
+    try:
+        result = json.loads((Path(state_dir) / STATUS_FILE).read_text())
+    except (FileNotFoundError, ValueError):
+        return {'state': 'pending', 'last_success': None, 'consecutive_errors': 0}
+    if not isinstance(result, dict):
+        return {'state': 'warning', 'last_success': None, 'consecutive_errors': 0}
+    success = result.get('last_success')
+    try:
+        stale = not success or (datetime.now(timezone.utc) - datetime.fromisoformat(success)).total_seconds() > 360
+    except (ValueError, TypeError):
+        stale = True
+    result['state'] = 'warning' if stale or result.get('consecutive_errors', 0) >= 3 else 'ok'
+    return result

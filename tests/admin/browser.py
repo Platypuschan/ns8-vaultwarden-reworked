@@ -15,11 +15,17 @@ import subprocess
 import tempfile
 import threading
 import time
+from core_fixture import CoreFixture
 
 ROOT = Path(__file__).resolve().parents[2]
 image = os.environ.get('VW_RUNTIME_IMAGE', 'localhost/vaultwarden-reworked-server:admin-ui')
 name = 'vw-admin-browser-' + secrets.token_hex(5)
 token = secrets.token_urlsafe(48)
+core_fixture = CoreFixture()
+import atexit
+atexit.register(core_fixture.close)
+core_fixture.owners.add('tab')
+owner_tokens = {role: core_fixture.token(role) for role in ('owner1', 'owner2', 'tab')}
 
 
 def command(*args):
@@ -69,6 +75,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError, ssl.SSLEOFError):
+            pass  # A browser context may close while an asset is in flight.
+
     def do_GET(self):
         if self.path == '/test-control':
             self.send(200, b'<!doctype html><title>Test control</title>')
@@ -76,13 +88,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             role = self.path.split('role=', 1)[-1]
             body = '''<!doctype html><script>
             location.hash='#/apps/vaultwarden-reworked1/settings';
+            localStorage.setItem('loginInfo', JSON.stringify({token:'JWT'}));
             const events=new Map();
             const root={$once:(name,fn)=>events.set(name,fn),$off:(name)=>events.delete(name)};
             window.core={$root:root,$children:[{createModuleTaskForApp:async (module,request)=>{
               const response=await fetch('/test-task?role=ROLE',{method:'POST'});
               const event=`open-admin-${response.ok?'completed':'aborted'}-${request.extra.eventId}`;
               const fn=events.get(event); if(fn) fn(null,{output:response.ok?await response.json():null});
-            }}]};</script><iframe src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role)
+            }}]};</script><iframe src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role).replace('JWT', owner_tokens.get(role, 'reader'))
             self.send(200, body.encode())
         elif self.path.startswith('/cluster-admin/apps/') and self.path.endswith('/index.html'):
             self.send(200, (ROOT / 'ui/index.html').read_bytes())
@@ -98,7 +111,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 # role=tab: an installation whose cluster manager may not embed the page
                 ancestors = [] if self.path.endswith('role=tab') else [base]
-                self.send(200, json.dumps({'url': vault + '/admin/', 'token': token,
+                self.send(200, json.dumps({'url': vault + '/admin/',
                     'frame_ancestors': ancestors}).encode(), 'application/json')
         elif self.path == '/test-restart':
             command('podman', 'restart', name)
@@ -147,7 +160,7 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
             '-v', f'{path / "data"}:/data:Z', '-e', 'NS8_MANAGED_CONFIG=true',
             '-e', 'SSO_ENABLED=true', '-e', 'SSO_ONLY=true', '-e', 'SSO_AUTHORITY=https://sso.example.test/realms/ad.test',
             '-e', 'SSO_CLIENT_ID=fixture', '-e', 'SSO_CLIENT_SECRET=fixture',
-            '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
+            '-e', 'NS8_CORE_API=' + core_fixture.url, '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
             '-e', 'ALLOWED_IFRAME_ANCESTORS=' + base, image)
         ready()
         subprocess.run(['node', str(ROOT / 'tests/admin/browser.mjs')], check=True,

@@ -50,8 +50,8 @@ try:
             urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
             urllib.request.HTTPCookieProcessor(jar))
         request = urllib.request.Request('https://127.0.0.1/admin/',
-            data=urllib.parse.urlencode({'token': login['token']}).encode(),
-            headers={'Host': host})
+            data=urllib.parse.urlencode({'token': subprocess.check_output(['api-cli', 'login', '-u', username, '-p', password, '-o'], text=True).strip()}).encode(),
+            headers={'Host': host, 'Origin': login['frame_ancestors'][0]})
         with opener.open(request, timeout=20) as response:
             assert response.status == 200
             # The cluster manager on the node may embed the admin page.
@@ -59,7 +59,8 @@ try:
         assert login['frame_ancestors'], 'No cluster manager origin allowed'
         ancestors = csp.split('frame-ancestors', 1)[1].split(';', 1)[0].split()
         assert all(origin in ancestors for origin in login['frame_ancestors'])
-        assert any(c.name == 'VW_ADMIN' for c in jar)
+        assert 'token' not in login, 'Backend credential was exported'
+        assert any(c.name == 'NS8_ADMIN' for c in jar)
         with opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
                 headers={'Host': host}), timeout=20) as response:
             assert isinstance(json.load(response), dict)
@@ -80,6 +81,17 @@ try:
             assert values.get('admin_token') is None and values.get('sso_enabled') is None
             assert values.get('allowed_iframe_ancestors') is None
             print('Admin settings: saved and service restarted successfully')
+        if index == 1:
+            task('cluster/alter-user', {'user': username, 'set': {},
+                'revoke': [{'role': 'owner', 'on': '*'}]})
+            try:
+                opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
+                    headers={'Host': host}), timeout=20)
+            except urllib.error.HTTPError as error:
+                assert error.code == 403, error.code
+            else:
+                raise AssertionError('Existing admin session survived NS8 owner revocation')
+            print('NS8 owner revocation: existing admin session immediately denied')
         print('NS8 administrator: direct admin login successful')
     result = subprocess.run(['runagent', '-m', module, 'api-cli', 'run',
         f'module/{module}/open-admin', '--data', '{}'], capture_output=True)

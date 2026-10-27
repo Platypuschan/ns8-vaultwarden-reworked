@@ -11,7 +11,12 @@ async function adminFrame(page) {
   for (let i = 0; i < 300; i++) {
     const frame = page.frames().find(f => f.url() === vault + '/admin/');
     if (frame) {
-      await frame.locator('#config-form').waitFor();
+      try { await frame.locator('#config-form').waitFor(); }
+      catch (error) {
+        console.log('Admin frame diagnosis:', await frame.title(), await frame.locator('form').evaluateAll(forms => forms.map(f => f.id)));
+        console.log('Admin frame message:', (await frame.locator('body').innerText()).slice(0, 180));
+        throw error;
+      }
       assert(page.url().startsWith(cluster));
       return frame;
     }
@@ -24,7 +29,7 @@ try {
   const anonymous = await browser.newContext({ignoreHTTPSErrors: true});
   const anonymousPage = await anonymous.newPage();
   const denied = await anonymousPage.goto(vault + '/admin/users');
-  assert.equal(denied.status(), 401);
+  assert.equal(denied.status(), 403);
   await anonymous.close();
 
   // Direct SSO link: the web vault goes to the IdP without asking for an email.
@@ -42,12 +47,12 @@ try {
     const page = await context.newPage();
     await page.goto(cluster + '?role=' + role);
     if (role === 'reader') {
-      const frame = page.frameLocator('iframe');
+      const frame = page.frameLocator('iframe').first();
       await frame.locator('#status').filter({hasText: 'NS8-Administrator'}).waitFor();
       assert.equal(new URL(page.url()).hostname, 'cluster.example.test');
       console.log('Browser reader: no admin navigation');
     } else if (role === 'tab') {
-      const frame = page.frameLocator('iframe');
+      const frame = page.frameLocator('iframe').first();
       await frame.locator('#status').filter({hasText: 'neuem Tab'}).waitFor();
       const [tab] = await Promise.all([context.waitForEvent('page'), frame.locator('#open').click()]);
       await tab.waitForURL(vault + '/admin/', {timeout: 30000});
@@ -58,7 +63,7 @@ try {
       let frame = await adminFrame(page);
       assert.equal(context.pages().length, 1);
       const cookies = await context.cookies(vault + '/admin/');
-      assert(cookies.some(cookie => cookie.name === 'VW_ADMIN' && cookie.httpOnly && cookie.secure));
+      assert(cookies.some(cookie => cookie.name === 'NS8_ADMIN' && cookie.httpOnly && cookie.secure));
       assert(await frame.locator('#input_sso_enabled').isDisabled());
       assert(await frame.locator('#input_sso_enabled').isChecked());
       assert.notEqual(await frame.locator('#input_admin_token').getAttribute('readonly'), null);
