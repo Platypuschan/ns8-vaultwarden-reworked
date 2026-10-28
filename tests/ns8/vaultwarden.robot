@@ -33,11 +33,14 @@ Discovery is reachable from app
     ${metadata} =    Evaluate    json.loads($out)    modules=json
     Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
 
+IdP client identity
+    ${out}    ${rc} =    Execute Command    runagent -m ${IDP} python3 -c 'import json,hashlib,kcadmin; k=kcadmin.agent_client(); c=k.find_client("${DOMAIN}","${APP}"); secret=k.get("/${DOMAIN}/clients/"+c["id"]+"/client-secret")["value"]; print(json.dumps({"realm":k.get("/${DOMAIN}")["id"],"client":c["id"],"group":c["attributes"]["ns8.access_group_id"],"secret_sha256":hashlib.sha256(secret.encode()).hexdigest()},sort_keys=True))'    return_rc=True
+    Should Be Equal As Integers    ${rc}    0
+    RETURN    ${out}
+
 *** Test Cases ***
-Install IdP and released Vaultwarden rc.4 for upgrade
-    ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
-    ${idp_image} =    Evaluate    $idp_image.strip()
-    ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
+Install released IdP rc.3 and Vaultwarden rc.4 for upgrade
+    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/idp-reworked:0.1.0-rc.3 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${IDP}    ${data['module_id']}
@@ -46,13 +49,6 @@ Install IdP and released Vaultwarden rc.4 for upgrade
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${APP}    ${data['module_id']}
-
-Public Keycloak admin paths are blocked while the home redirect remains public
-    ${ip} =    Execute Command    hostname -I | awk '{print $1}'
-    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/admin/realms
-    Should Be Equal    ${code}    403
-    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/realms/master/ns8-home
-    Should Be Equal    ${code}    302
 
 Create internal Samba domain
     ${out} =    Run task    cluster/add-internal-provider    {"image":"samba","node":1}
@@ -90,6 +86,26 @@ Activate application and verify private settings
     ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_ONLY=true' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
+
+Upgrade configured IdP rc.3 while preserving realm and client identity
+    ${before} =    IdP client identity
+    ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
+    ${idp_image} =    Evaluate    $idp_image.strip()
+    Run task    cluster/update-module    {"module_url":"${idp_image}","instances":["${IDP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    180s    3s    Discovery is reachable from app
+    Wait Until Keyword Succeeds    120s    3s    Policy is enforced
+    ${after} =    IdP client identity
+    Should Be Equal    ${before.strip()}    ${after.strip()}
+    ${expected} =    Execute Command    runagent -m ${IDP} printenv IDP_REWORKED_KEYCLOAK_IMAGE
+    ${running} =    Execute Command    runagent -m ${IDP} podman inspect --format '{{.ImageName}}' keycloak
+    Should Be Equal    ${running.strip()}    ${expected.strip()}
+
+Public Keycloak admin paths are blocked while the home redirect remains public
+    ${ip} =    Execute Command    hostname -I | awk '{print $1}'
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/admin/realms
+    Should Be Equal    ${code}    403
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/realms/master/ns8-home
+    Should Be Equal    ${code}    302
 
 Upgrade configured rc.4 to corrected package
     ${worker_before} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
