@@ -118,6 +118,37 @@ class NetworkTests(unittest.TestCase):
 
 
 class ConfigureDiscoveryTests(unittest.TestCase):
+    def test_configure_before_prepare_returns_validation_without_side_effects(self):
+        config = {'host': 'vault.test', 'domain': 'ad.test', 'idp_module': 'idp1'}
+        agent = types.ModuleType('agent')
+        tasks = types.ModuleType('agent.tasks')
+        tasks.run = Mock()
+        agent.tasks = tasks
+        agent.exclusive_file_lock = lambda name: contextlib.nullcontext()
+        agent.set_status = Mock()
+        sso = types.ModuleType('vaultwarden_sso')
+        sso.task = Mock()
+        sso.prepare = Mock()
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory), \
+                patch.dict(sys.modules, {'agent': agent, 'agent.tasks': tasks, 'vaultwarden_sso': sso}), \
+                patch.object(sys, 'stdin', io.StringIO(json.dumps(config))), \
+                patch.object(sys, 'stdout', output), patch('subprocess.run') as service:
+            with self.assertRaises(SystemExit) as exit_result:
+                runpy.run_path(str(ROOT / 'imageroot/actions/configure-module/20configure'))
+            self.assertEqual(exit_result.exception.code, 2)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+        agent.set_status.assert_called_once_with('validation-failed')
+        errors = json.loads(output.getvalue())
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]['error'], 'sso_not_prepared')
+        self.assertEqual(errors[0]['parameter'], 'idp_module')
+        self.assertIn('prepare-sso', errors[0]['message'])
+        tasks.run.assert_not_called()
+        sso.task.assert_not_called()
+        sso.prepare.assert_not_called()
+        service.assert_not_called()
+
     def configure(self, lets_encrypt, failure=False):
         config = {'host': 'vault.test', 'domain': 'ad.test', 'idp_module': 'idp1',
             'required_group': 'services_vaultwarden', 'lets_encrypt': lets_encrypt}

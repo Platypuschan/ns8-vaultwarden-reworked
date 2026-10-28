@@ -12,8 +12,16 @@ import vaultwarden_revoke
 
 config = policy.validate(json.load(sys.stdin))
 with agent.exclusive_file_lock('configuration'):
-    with open('settings.json') as f:
-        previous = json.load(f)
+    try:
+        with open('settings.json') as f:
+            previous = json.load(f)
+    except FileNotFoundError:
+        agent.set_status('validation-failed')
+        json.dump([{'field': 'idp_module', 'parameter': 'idp_module',
+            'value': config['idp_module'], 'error': 'sso_not_prepared',
+            'message': 'Run prepare-sso before configure-module, then apply the IdP group policy.'}], sys.stdout)
+        sys.exit(2)
+
     if any(config[k] != previous[k] for k in ('host', 'domain', 'idp_module')):
         raise ValueError('Prepare SSO first; host/domain/IdP migrations are outside this prototype')
     state = vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']})
