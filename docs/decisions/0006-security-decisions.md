@@ -58,8 +58,9 @@ limits remain in place; no new P3 brute-force policy is introduced.
 
 The admin page opens in a child iframe. Superseded on 29 October 2026 (user
 decision): once embedded, the module page shows only the admin frame over the
-whole application area, without heading, status or new-tab button; warnings
-appear as a narrow bar above it. The new-tab button remains only where the
+whole application area, without heading, status or new-tab button. Warnings
+(revocation problems, a session that cannot be renewed) are NS8 notifications
+of the cluster manager, not part of the page. The new-tab button remains only where the
 cluster manager may not embed the page. Consequence: if the browser withholds
 the Strict cookie inside the frame (cluster manager and Vaultwarden on two
 different sites, e.g. two co.uk domains), admin actions fail in the frame and

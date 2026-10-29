@@ -95,7 +95,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             location.hash='#/apps/vaultwarden-reworked1/settings';
             const events=new Map();
             const root={$once:(name,fn)=>events.set(name,fn),$off:(name)=>events.delete(name)};
-            window.core={$root:root,$children:[{createModuleTaskForApp:async (module,request)=>{
+            window.notifications=[];
+            window.core={$root:root,$children:[{createNotification:n=>window.notifications.push(n),
+            createModuleTaskForApp:async (module,request)=>{
               const response=await fetch('/test-task?role=ROLE',{method:'POST'});
               const event=`open-admin-${response.ok?'completed':'aborted'}-${request.extra.eventId}`;
               const fn=events.get(event); if(fn) fn(null,{output:response.ok?await response.json():null});
@@ -118,9 +120,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # role=tab: an installation whose cluster manager may not embed the page
                 ancestors = [] if role == 'tab' else [base, suffix_cluster]
                 destination = suffix_vault if role == 'public-suffix' else vault
+                # owner1: an installation whose revocation timer keeps failing
+                revocation = {'state': 'warning' if role == 'owner1' else 'ok'}
                 self.send(200, json.dumps({'url': destination + '/admin/',
                     'ticket': issue_ticket(role, tickets), 'session_seconds': SESSION_SECONDS,
-                    'frame_ancestors': ancestors}).encode(), 'application/json')
+                    'frame_ancestors': ancestors, 'revocation': revocation}).encode(), 'application/json')
         elif self.path.startswith('/test-revoke?'):
             revoked.add(self.path.split('role=', 1)[-1])
             self.send(200, b'{}', 'application/json')

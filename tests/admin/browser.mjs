@@ -88,6 +88,13 @@ try {
       const application = page.frameLocator('iframe').first();
       for (const selector of ['h1', '#status', '#open'])
         assert(!(await application.locator(selector).isVisible()), selector + ' must be hidden');
+      assert(!(await application.locator('#warning').isVisible()), 'no warning bar over the admin frame');
+      const notices = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+      if (role === 'owner1') {
+        assert(notices.some(n => n.startsWith('warning:') && n.includes('Zugriffswiderruf')), notices.join());
+      } else {
+        assert.deepEqual(notices, []);
+      }
       const area = await page.locator('iframe').first().boundingBox();
       const admin = await application.locator('#admin-frame').boundingBox();
       assert(Math.abs(admin.width - area.width) <= 1 && Math.abs(admin.height - area.height) <= 1,
@@ -139,7 +146,8 @@ try {
         await control.close();
         await page.waitForTimeout(20000);
         assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 403);
-        await page.frameLocator('iframe').first().locator('#warning').filter({hasText: 'nicht verlängert'}).waitFor({state: 'visible'});
+        const ended = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+        assert(ended.some(n => n.startsWith('warning:') && n.includes('nicht verlängert')), ended.join());
         console.log('Browser owner2: session renewed while open, ended after the NS8 right was revoked');
       }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');
