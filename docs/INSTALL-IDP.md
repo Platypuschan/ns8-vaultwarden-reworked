@@ -16,9 +16,13 @@ api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/va
 Wird Vaultwarden vor dem IdP aktualisiert, bricht das Update mit einem Hinweis
 ab und alle Vaultwarden-Sitzungen werden beendet, bis der IdP aktualisiert ist.
 
+Die rc.6 ist mit Neuinstallation, gemeinsamem Update von IdP rc.3 und
+Vaultwarden rc.4 auf Debian13/Rocky9 je 17/17 geprüft;
+[aktuelle Nachweise](RELEASE-0.1.0-rc.6.md).
+
 Die rc.5 öffnet die Adminoberfläche im Anwendungsbereich des Cluster-Managers und ist
 mit Neuinstallation und Update von rc.4 auf Debian13/Rocky9 je 15/15 geprüft;
-[aktuelle Nachweise](RELEASE-0.1.0-rc.5.md).
+[Nachweise](RELEASE-0.1.0-rc.5.md).
 Die rc.4 ist mit Neuinstallation, direktem Adminzugang und Update von rc.3
 auf Debian13/Rocky9 je 15/15 geprüft; [Nachweise](RELEASE-0.1.0-rc.4.md).
 Die rc.3 ist mit Neuinstallation und Update von rc.2 auf Debian13/Rocky9 je
