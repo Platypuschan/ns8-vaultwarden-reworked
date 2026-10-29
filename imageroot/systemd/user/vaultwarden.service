@@ -14,12 +14,14 @@ ExecStartPre=/usr/bin/podman volume create --ignore vaultwarden-data
 # NS8-managed values are read-only in the runtime; ordinary admin settings
 # can be saved in config.json and survive restart.
 ExecStartPre=/bin/rm -f %t/vaultwarden.ctr-id
+# One-time admin tickets of open-admin
+ExecStartPre=/bin/mkdir -p -m 0700 %E/state/admin-tickets
 ExecStart=/usr/bin/podman run --sdnotify=conmon --detach --replace --name=vaultwarden-app \
     --cgroups=no-conmon --cidfile=%t/vaultwarden.ctr-id \
     $VAULTWARDEN_NETWORK_ARGS \
     --publish=127.0.0.1:${TCP_PORT}:80 \
     --volume=vaultwarden-data:/data:Z \
-    --env=NS8_CORE_API=${NS8_CORE_API} \
+    --volume=%E/state/admin-tickets:/ns8-admin-tickets:Z \
     --env-file=./vaultwarden.env \
     ${VAULTWARDEN_REWORKED_SERVER_IMAGE}
 ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/vaultwarden.ctr-id -t 20

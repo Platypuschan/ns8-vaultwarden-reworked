@@ -12,26 +12,33 @@ import vaultwarden_sso as sso
 if subprocess.run(['systemctl', '--user', '-q', 'is-active', 'vaultwarden.service']).returncode != 0:
     sys.exit(0)
 report = None
+reason = None
 try:
     with open('settings.json') as f:
         config = json.load(f)
     state = sso.task(config, 'get-client-access', {'domain': config['domain']})
-    mismatch = False
     try:
         policy.require_policy(config, state)
     except ValueError:
-        mismatch = True
-    members = set() if mismatch else revoke.group_member_mails(revoke.domain_settings(config['domain']), config['required_group'])
+        # An IdP without the group binding of this release cannot protect
+        # Vaultwarden either: end all sessions until it is updated
+        reason = 'idp_update_required' if 'policy_consumer_bound' not in state else 'policy_mismatch'
+    members = set() if reason else revoke.group_member_mails(revoke.domain_settings(config['domain']), config['required_group'])
     api = revoke.AdminAPI('http://127.0.0.1:' + os.environ['TCP_PORT'], revoke.read_admin_token())
     report = revoke.reconcile(api, members)
-    if mismatch:
+    if reason == 'idp_update_required':
+        raise revoke.RevokeError('The IdP module is older than this Vaultwarden module; update the IdP module. All sessions were ended')
+    if reason:
         raise revoke.RevokeError('IdP access policy is missing, disabled or different; all sessions were ended')
+    if report['failed']:
+        reason = 'deauth_failed'
+        raise revoke.RevokeError(f'The sessions of {report["failed"]} users could not be ended')
     revoke.write_status(report=report)
 except Exception as error:
     # Keep exception text out of status and journal: upstream errors may
     # contain URLs, LDAP credentials or task payloads.
     message = str(error) if isinstance(error, revoke.RevokeError) else type(error).__name__
-    result = revoke.write_status(error=message, report=report)
+    result = revoke.write_status(error=message, report=report, reason=reason)
     print('Vaultwarden access revocation failed: ' + message, file=sys.stderr)
     sys.exit(1)
 print('Vaultwarden access revocation: ' + json.dumps(report), file=sys.stderr)

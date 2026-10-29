@@ -37,7 +37,7 @@ class RevokeTests(unittest.TestCase):
     def test_non_members_are_logged_out_and_never_disabled(self):
         before = dict(self.api.accounts['b'])
         report = self.reconcile({'alice@example.test', 'carol@example.test'})
-        self.assertEqual(report, {'deauthenticated': 1, 'legacy_disabled': 0})
+        self.assertEqual(report, {'deauthenticated': 1, 'failed': 0, 'legacy_disabled': 0})
         self.assertEqual(self.api.calls, [('deauth', 'b')])
         self.assertEqual(self.api.accounts['b'], before)
         self.reconcile({'alice@example.test', 'bob@example.test', 'carol@example.test'})
@@ -58,16 +58,35 @@ class RevokeTests(unittest.TestCase):
         self.assertEqual(report['deauthenticated'], 3)
         self.assertEqual(set(self.api.calls), {('deauth', 'a'), ('deauth', 'b'), ('deauth', 'c')})
 
-    def test_partial_failure_can_be_retried_without_lock_bookkeeping(self):
-        def interrupted(user):
-            raise revoke.RevokeError('injected failure')
+    def test_one_failing_user_does_not_stop_the_others(self):
         original = self.api.deauth
-        self.api.deauth = interrupted
-        with self.assertRaises(revoke.RevokeError):
-            self.reconcile(set())
+        def first_fails(user):
+            if user == 'a':
+                raise revoke.RevokeError('Vaultwarden admin API POST users: HTTP 500')
+            original(user)
+        self.api.deauth = first_fails
+        report = self.reconcile(set())
+        self.assertEqual(report['failed'], 1)
+        self.assertEqual(report['deauthenticated'], 2)
+        self.assertEqual(set(self.api.calls), {('deauth', 'b'), ('deauth', 'c')})
         self.api.deauth = original
         self.assertEqual(self.reconcile(set())['deauthenticated'], 3)
         self.assertFalse((Path(self.dir.name) / revoke.REVOKED_FILE).exists())
+
+    def test_unreachable_vaultwarden_stops_the_run(self):
+        def unreachable(user):
+            self.api.calls.append(('deauth', user))
+            raise revoke.UnavailableError('Vaultwarden is not reachable: URLError')
+        self.api.deauth = unreachable
+        with self.assertRaises(revoke.UnavailableError):
+            self.reconcile(set())
+        self.assertEqual(len(self.api.calls), 1)
+
+    def test_status_keeps_the_reason(self):
+        revoke.write_status(error='IdP too old', state_dir=self.dir.name, reason='idp_update_required')
+        self.assertEqual(revoke.status(self.dir.name)['reason'], 'idp_update_required')
+        revoke.write_status(state_dir=self.dir.name)
+        self.assertNotIn('reason', revoke.status(self.dir.name))
 
     def test_status_preserves_last_success_and_warns_after_repeated_errors(self):
         success = revoke.write_status(report={'legacy_disabled': 2}, state_dir=self.dir.name)

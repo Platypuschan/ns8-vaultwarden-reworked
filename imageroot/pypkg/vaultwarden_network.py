@@ -1,8 +1,5 @@
 """Reach a co-located IdP without routing through pasta's own guest address."""
 import json
-import ipaddress
-import os
-import socket
 import subprocess
 import time
 from urllib.parse import urlsplit
@@ -36,24 +33,8 @@ def prepare_network(config, issuer, rdb, local_node):
     backend = subprocess.check_output(
         ['podman', 'info', '--format', '{{.Host.RootlessNetworkCmd}}'], text=True).strip()
     options = network_options(config, issuer, local_node, idp_node, backend)
-    leader_node = rdb.hget('cluster/environment', 'NODE_ID')
-    leader_host = os.environ.get('REDIS_ADDRESS', '127.0.0.1:6379').split(':', 1)[0]
-    if str(leader_node) == str(local_node):
-        leader_host = 'host-gateway'
-    else:
-        try:
-            address = ipaddress.ip_address(leader_host)
-        except ValueError:
-            # NS8 normally uses the host alias cluster-leader. Resolve it on
-            # the node, whose /etc/hosts is maintained by the core, before
-            # passing the address into the container. Recompute on every start.
-            leader_host = socket.gethostbyname(leader_host)
-            address = ipaddress.ip_address(leader_host)
-        if address.is_loopback:
-            leader_host = 'host-gateway'
-    options.append('--add-host=ns8-cluster-api:' + leader_host)
     policy.private_write('vaultwarden-network.env',
-        'VAULTWARDEN_NETWORK_ARGS=' + ' '.join(options) + '\nNS8_CORE_API=http://ns8-cluster-api:9311\n')
+        'VAULTWARDEN_NETWORK_ARGS=' + ' '.join(options) + '\n')
 
 
 def check_discovery(issuer, timeout=60, container='vaultwarden-app'):

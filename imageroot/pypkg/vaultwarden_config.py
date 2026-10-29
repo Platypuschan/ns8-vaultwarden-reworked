@@ -7,6 +7,8 @@ import secrets
 import tempfile
 from urllib.parse import urlsplit
 
+from vaultwarden_admin import SESSION_SECONDS
+
 
 ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
 HOST = re.compile(r'(?=.{1,253}\Z)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\Z')
@@ -60,8 +62,10 @@ def environment(config, registration, admin_token, ancestors=''):
         'EMAIL_CHANGE_ALLOWED': 'false', 'PUSH_ENABLED': 'false',
         'ROCKET_PORT': '80', 'IP_HEADER': 'X-Forwarded-For',
         'IP_HEADER_TRUSTED_PROXIES': 'local',
-        # Used by automatic NS8-owner login and the local revocation timer.
+        # Used by the local revocation timer only; NS8 admins log in with
+        # one-time tickets of open-admin.
         'ADMIN_TOKEN': admin_token,
+        'NS8_ADMIN_SESSION_SECONDS': str(SESSION_SECONDS),
         # Opening the module performs an automatic login. Leave room for
         # repeated visits and several NS8 admins behind the same address.
         'ADMIN_RATELIMIT_MAX_BURST': '30',

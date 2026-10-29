@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Browser fixture: NS8 task bridge contract plus the real Vaultwarden runtime.
 
-Actual NS8 owner/reader authorization is separately tested by ns8_access.py.
+The fake open-admin task issues real tickets; actual NS8 owner/reader
+authorization is separately tested by ns8_access.py.
 """
 import http.client
 import http.server
@@ -15,17 +16,19 @@ import subprocess
 import tempfile
 import threading
 import time
-from core_fixture import CoreFixture
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'imageroot/pypkg'))
+from vaultwarden_admin import issue_ticket
+
 image = os.environ.get('VW_RUNTIME_IMAGE', 'localhost/vaultwarden-reworked-server:admin-ui')
 name = 'vw-admin-browser-' + secrets.token_hex(5)
 token = secrets.token_urlsafe(48)
-core_fixture = CoreFixture()
-import atexit
-atexit.register(core_fixture.close)
-core_fixture.owners.update(('tab', 'public-suffix'))
-owner_tokens = {role: core_fixture.token(role) for role in ('owner1', 'owner2', 'tab', 'public-suffix')}
+# Short sessions: the page renews every 5 s, a revoked user drops out quickly
+SESSION_SECONDS = 12
+tickets = None
+revoked = set()
 
 
 def command(*args):
@@ -90,14 +93,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             role = self.path.split('role=', 1)[-1]
             body = '''<!doctype html><script>
             location.hash='#/apps/vaultwarden-reworked1/settings';
-            localStorage.setItem('loginInfo', JSON.stringify({token:'JWT'}));
             const events=new Map();
             const root={$once:(name,fn)=>events.set(name,fn),$off:(name)=>events.delete(name)};
             window.core={$root:root,$children:[{createModuleTaskForApp:async (module,request)=>{
               const response=await fetch('/test-task?role=ROLE',{method:'POST'});
               const event=`open-admin-${response.ok?'completed':'aborted'}-${request.extra.eventId}`;
               const fn=events.get(event); if(fn) fn(null,{output:response.ok?await response.json():null});
-            }}]};</script><iframe src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role).replace('JWT', owner_tokens.get(role, 'reader'))
+            }}]};</script><iframe src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role)
             self.send(200, body.encode())
         elif self.path.startswith('/cluster-admin/apps/') and self.path.endswith('/index.html'):
             self.send(200, (ROOT / 'ui/index.html').read_bytes())
@@ -108,14 +110,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path.startswith('/test-task?'):
-            if self.path.endswith('role=reader'):
+            role = self.path.split('role=', 1)[-1]
+            if role == 'reader' or role in revoked:
+                # NS8 refuses open-admin: no ticket
                 self.send(403, b'{}', 'application/json')
             else:
                 # role=tab: an installation whose cluster manager may not embed the page
-                ancestors = [] if self.path.endswith('role=tab') else [base, suffix_cluster]
-                destination = suffix_vault if self.path.endswith('role=public-suffix') else vault
+                ancestors = [] if role == 'tab' else [base, suffix_cluster]
+                destination = suffix_vault if role == 'public-suffix' else vault
                 self.send(200, json.dumps({'url': destination + '/admin/',
+                    'ticket': issue_ticket(role, tickets), 'session_seconds': SESSION_SECONDS,
                     'frame_ancestors': ancestors}).encode(), 'application/json')
+        elif self.path.startswith('/test-revoke?'):
+            revoked.add(self.path.split('role=', 1)[-1])
+            self.send(200, b'{}', 'application/json')
         elif self.path == '/test-restart':
             command('podman', 'restart', name)
             ready()
@@ -150,6 +158,8 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
         '-out', str(cert), '-days', '1', '-subj', '/CN=vault.example.test',
         '-addext', 'subjectAltName=DNS:cluster.example.test,DNS:vault.example.test,DNS:cluster.two.co.uk,DNS:vault.one.co.uk')
     (path / 'data').mkdir()
+    tickets = str(path / 'tickets')
+    os.mkdir(tickets, 0o700)
     server = http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert, key)
@@ -160,10 +170,12 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
         # teardown. The dedicated pasta and NS8 suites cover container networking.
         command('podman', 'run', '-d', '--name', name, '--network=host',
             '-e', 'ROCKET_ADDRESS=127.0.0.1', '-e', f'ROCKET_PORT={app_port}',
-            '-v', f'{path / "data"}:/data:Z', '-e', 'NS8_MANAGED_CONFIG=true', '-e', 'ADMIN_RATELIMIT_MAX_BURST=30',
+            '-v', f'{path / "data"}:/data:Z', '-v', f'{tickets}:/ns8-admin-tickets:Z',
+            '-e', 'NS8_MANAGED_CONFIG=true', '-e', f'NS8_ADMIN_SESSION_SECONDS={SESSION_SECONDS}',
+            '-e', 'ADMIN_RATELIMIT_MAX_BURST=30',
             '-e', 'SSO_ENABLED=true', '-e', 'SSO_ONLY=true', '-e', 'SSO_AUTHORITY=https://sso.example.test/realms/ad.test',
             '-e', 'SSO_CLIENT_ID=fixture', '-e', 'SSO_CLIENT_SECRET=fixture',
-            '-e', 'NS8_CORE_API=' + core_fixture.url, '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
+            '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
             '-e', 'ALLOWED_IFRAME_ANCESTORS=' + base + ' ' + suffix_cluster, image)
         ready()
         subprocess.run(['node', str(ROOT / 'tests/admin/browser.mjs')], check=True,

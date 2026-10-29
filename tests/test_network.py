@@ -50,44 +50,8 @@ class NetworkTests(unittest.TestCase):
                 self.assertIn('sso.test:host-gateway', path.read_text())
                 rdb.hget.return_value = '3'
                 network.prepare_network(self.config, self.issuer, rdb, '2')
-                self.assertNotIn('sso.test:host-gateway', path.read_text())
-                self.assertIn('NS8_CORE_API=http://ns8-cluster-api:9311', path.read_text())
-        rdb.hget.assert_any_call('cluster/module_node', 'idp-reworked1')
-
-    def test_local_cluster_leader_alias_does_not_require_an_ip_literal(self):
-        rdb = Mock()
-        rdb.hget.side_effect = lambda key, field: '1'
-        with patch.dict('os.environ', {'REDIS_ADDRESS': 'cluster-leader:6379'}), \
-                patch.object(network.subprocess, 'check_output', return_value='pasta'), \
-                patch.object(network.socket, 'gethostbyname') as resolve, \
-                patch.object(network.policy, 'private_write') as write:
-            network.prepare_network(self.config, self.issuer, rdb, '1')
-            resolve.assert_not_called()
-            self.assertIn('--add-host=ns8-cluster-api:host-gateway', write.call_args.args[1])
-
-    def test_remote_cluster_leader_alias_is_resolved_again_after_leader_moves(self):
-        rdb = Mock()
-        rdb.hget.side_effect = lambda key, field: '1'
-        with patch.dict('os.environ', {'REDIS_ADDRESS': 'cluster-leader:6379'}), \
-                patch.object(network.subprocess, 'check_output', return_value='pasta'), \
-                patch.object(network.socket, 'gethostbyname', side_effect=['10.5.4.1', '10.5.4.3']) as resolve, \
-                patch.object(network.policy, 'private_write') as write:
-            network.prepare_network(self.config, self.issuer, rdb, '2')
-            self.assertIn('--add-host=ns8-cluster-api:10.5.4.1', write.call_args.args[1])
-            network.prepare_network(self.config, self.issuer, rdb, '2')
-            self.assertIn('--add-host=ns8-cluster-api:10.5.4.3', write.call_args.args[1])
-            self.assertEqual(resolve.call_count, 2)
-
-    def test_unresolvable_leader_never_reuses_a_stale_mapping(self):
-        rdb = Mock()
-        rdb.hget.return_value = '1'
-        with patch.dict('os.environ', {'REDIS_ADDRESS': 'cluster-leader:6379'}), \
-                patch.object(network.subprocess, 'check_output', return_value='pasta'), \
-                patch.object(network.socket, 'gethostbyname', side_effect=network.socket.gaierror('unavailable')), \
-                patch.object(network.policy, 'private_write') as write:
-            with self.assertRaises(network.socket.gaierror):
-                network.prepare_network(self.config, self.issuer, rdb, '2')
-            write.assert_not_called()
+                self.assertEqual(path.read_text(), 'VAULTWARDEN_NETWORK_ARGS=\n')
+        rdb.hget.assert_called_with('cluster/module_node', 'idp-reworked1')
 
     def test_issuer_read_does_not_split_query_or_secret_values(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -79,7 +79,10 @@ try {
       await tab.waitForURL(vault + '/admin/', {timeout: 30000});
       await tab.locator('#config-form').waitFor();
       assert(page.url().startsWith(cluster));
-      console.log('Browser tab: not embeddable, admin opens in a new tab, cluster manager stays');
+      // The module page renews the session of the other tab without its cookie
+      await page.waitForTimeout(20000);
+      assert.equal(await tab.evaluate(async () => (await fetch('/admin/users')).status), 200);
+      console.log('Browser tab: not embeddable, admin opens in a new tab, cluster manager stays, session renewed');
     } else {
       let frame = await adminFrame(page);
       assert.equal(context.pages().length, 1);
@@ -119,6 +122,20 @@ try {
       });
       assert.equal(users.status, 200);
       assert(Array.isArray(users.users));
+      if (role === 'owner2') {
+        // Renewed beyond the session lifetime while the page is open
+        await page.waitForTimeout(20000);
+        assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 200);
+        // Without the NS8 right to run open-admin, no new ticket: the session ends
+        const control = await context.newPage();
+        await control.goto(base + '/test-control');
+        assert.equal(await control.evaluate(async () => (await fetch('/test-revoke?role=owner2', {method: 'POST'})).status), 200);
+        await control.close();
+        await page.waitForTimeout(20000);
+        assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 403);
+        await page.frameLocator('iframe').first().locator('#status').filter({hasText: 'nicht verlängert'}).waitFor();
+        console.log('Browser owner2: session renewed while open, ended after the NS8 right was revoked');
+      }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');
     }
     await context.close();

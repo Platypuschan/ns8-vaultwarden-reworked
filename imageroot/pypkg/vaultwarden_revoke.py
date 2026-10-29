@@ -20,6 +20,10 @@ class RevokeError(Exception):
     """A safe-to-show error; never contains a password or a token."""
 
 
+class UnavailableError(RevokeError):
+    """Vaultwarden cannot be reached: no further request can succeed."""
+
+
 #
 # AD group members
 #
@@ -131,7 +135,7 @@ class AdminAPI:
         except urllib.error.HTTPError as error:
             return error.code, error.headers, error.read()
         except (urllib.error.URLError, OSError) as error:
-            raise RevokeError(f'Vaultwarden is not reachable: {type(error).__name__}') from None
+            raise UnavailableError(f'Vaultwarden is not reachable: {type(error).__name__}') from None
 
     def login(self):
         body = urllib.parse.urlencode({'token': self.token}).encode()
@@ -198,13 +202,21 @@ def reconcile(api, members, state_dir='.'):
 
     Legacy disabled accounts stay disabled for administrative review; the
     old journal is retained, but is no longer an authority to enable anyone.
+    A user whose sessions cannot be ended does not stop the others: the
+    caller reports the failures. Only an unreachable Vaultwarden stops.
     """
     legacy = _load_revoked(state_dir)
-    report = {'deauthenticated': 0, 'legacy_disabled': len(legacy) if isinstance(legacy, dict) else None}
+    report = {'deauthenticated': 0, 'failed': 0, 'legacy_disabled': len(legacy) if isinstance(legacy, dict) else None}
     for user in api.users():
         email = (user.get('email') or '').strip().lower()
         if not email or email not in members:
-            api.deauth(user['id'])
+            try:
+                api.deauth(user['id'])
+            except UnavailableError:
+                raise
+            except RevokeError:
+                report['failed'] += 1
+                continue
             report['deauthenticated'] += 1
     return report
 
@@ -230,7 +242,7 @@ def initialize_status(state_dir='.'):
             'last_success': None, 'last_error': None, 'consecutive_errors': 0}))
 
 
-def write_status(error=None, report=None, state_dir='.'):
+def write_status(error=None, report=None, state_dir='.', reason=None):
     from datetime import datetime, timezone
     from vaultwarden_config import private_write
     from pathlib import Path
@@ -249,6 +261,8 @@ def write_status(error=None, report=None, state_dir='.'):
         'consecutive_errors': previous.get('consecutive_errors', 0) + 1 if error else 0,
         'legacy_disabled': (report or {}).get('legacy_disabled', previous.get('legacy_disabled', 0)),
     }
+    if reason:
+        status['reason'] = reason
     private_write(path, json.dumps(status))
     return status
 

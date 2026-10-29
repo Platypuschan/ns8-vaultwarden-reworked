@@ -16,26 +16,39 @@ open-admin returns the URL, permitted frame ancestors and revoker status. It
 never exports ADMIN_TOKEN. Managed password fields are masked in both value
 and default in the rendered settings, including ADMIN_TOKEN and the SSO client
 secret. Upgrade rotates the internal worker token to invalidate copies exposed
-by previous releases; user credentials, SSO identity and vault keys are preserved. The UI submits the current NS8 login token in a
-POST body to the runtime. The runtime verifies it through the NS8 leader API
-and confirms that the authenticated identity is a current cluster owner.
-It stores the NS8 token only in process memory and gives the browser a random
-HttpOnly SameSite=Strict NS8_ADMIN session cookie. The session has no independent
-authority: EVERY protected request repeats the current NS8 authorization check.
-Role removal, token expiry, missing owner membership, API failure or restart
-therefore denies the request. A failed session cannot be revived by replaying
-its cookie after a role regrant; logout deletes server-side state.
+by previous releases; user credentials, SSO identity and vault keys are preserved.
 
-The existing supported NS8 API has no role-introspection endpoint. The bridge
-therefore submits the read-only-in-effect list-users task and reads its result
-on every request. Unlike a GET or a JWT role claim, task submission performs
-current leader-side authorization; the task result identifies current owners.
-This deliberately adds task/API traffic and a small wait to administrative
-requests. No result is cached across requests. Calls use the local host API or
-the cluster VPN endpoint, recomputed from leader metadata on every container
-start, with redirects disabled. No core signing key or additional privilege is
-copied to the module. A future dedicated core endpoint could replace this
-transport without changing revocation semantics.
+Superseded on 29 October 2026 (security recheck R1/R5/R12, user decision for
+one-time tickets): the first P5 bridge posted the NS8 login token of the
+cluster manager to Vaultwarden, which kept it for 12 hours and replayed it
+against the cluster API on every request. That token is a full owner bearer for
+14 days and NS8 logout does not revoke it, so a compromised internet-facing
+Vaultwarden would have exposed the cluster. Server-side replay also failed for
+owners with a per-user IP allowlist. Now:
+
+- NS8 authorizes open-admin for the user who runs it, in that user's browser
+  request (including its IP allowlist). The action stores the SHA-256 of a
+  random 60-second ticket and the NS8 user in admin-tickets/, mounted at
+  /ns8-admin-tickets. Vaultwarden claims a ticket by renaming its file, so a
+  ticket works once. No NS8 credential reaches Vaultwarden, and Vaultwarden
+  makes no cluster API call.
+- The login POST carries `<ticket>:<handle>`. The handle is a random value of
+  the module page; Vaultwarden keeps its hash with the session. The browser gets
+  a random HttpOnly SameSite=Strict NS8_ADMIN cookie.
+- A session ends NS8_ADMIN_SESSION_SECONDS (120) after its last renewal. While
+  the module page is open, it runs open-admin every 30 seconds and posts the new
+  ticket with the handle to /admin/ns8/renew (no cookie, so a session in a
+  separate tab is renewed too). Losing the right to run open-admin therefore
+  ends admin access within 120 seconds instead of on the next request; this is
+  the accepted trade-off of the decision. A failed renewal, restart or logout
+  ends the session; an expired session cannot be revived.
+- Whoever NS8 lets run open-admin may administer Vaultwarden: cluster owners
+  and owners delegated on the module. Module agents get no ticket.
+- Tickets and sessions are not in backups; tickets expire after 60 seconds and
+  are purged by the next open-admin.
+
+The Redis owner list considered first is not possible: module credentials read
+only cluster/*, node/* and module/* keys, and role changes publish no event.
 
 The worker uses a separate server-only X-NS8-Worker header carrying the existing
 internal token. An old VW_ADMIN cookie alone is insufficient when managed mode
@@ -77,6 +90,13 @@ configured groups. The previous IdP/worker paths searched different attributes.
 The worker now uses CN consistently and rejects ambiguous matches. A separate
 stable AD-GUID redesign was not selected by the user; the IdP policy pin uses
 its persistent group ID.
+
+Security recheck R3/R4 (29 October 2026): an IdP without the binding fields
+of this release still ends all sessions, but the status reports the reason
+idp_update_required and open-admin shows that the IdP needs an update; the update
+hook stops with the same instruction. A user whose sessions cannot be ended no
+longer stops the run: the other users are processed and the run reports the
+failures (reason deauth_failed). Only an unreachable Vaultwarden stops a run.
 
 revocation-status.json contains last attempt, last success, a safe failure code,
 consecutive errors and a count of legacy locks. get-configuration returns it;

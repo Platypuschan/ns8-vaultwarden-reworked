@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run as root in an isolated NS8 test VM: two owners succeed, reader denied."""
 import hashlib
+import time
 import http.cookiejar
 import json
 import secrets
@@ -44,23 +45,35 @@ try:
             continue
         login = task(f'module/{module}/open-admin', user=username, password=password)
         assert login['url'] == f'https://{host}/admin/'
+        assert login['frame_ancestors'], 'No cluster manager origin allowed'
+        assert 'token' not in login, 'Backend credential was exported'
+        handle = secrets.token_urlsafe(32)
         jar = http.cookiejar.CookieJar()
         # QEMU uses a self-signed test certificate; production browser uses HTTPS normally.
         opener = urllib.request.build_opener(
             urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
             urllib.request.HTTPCookieProcessor(jar))
-        request = urllib.request.Request('https://127.0.0.1/admin/',
-            data=urllib.parse.urlencode({'token': subprocess.check_output(['api-cli', 'login', '-u', username, '-p', password, '-o'], text=True).strip()}).encode(),
-            headers={'Host': host, 'Origin': login['frame_ancestors'][0]})
-        with opener.open(request, timeout=20) as response:
-            assert response.status == 200
-            # The cluster manager on the node may embed the admin page.
-            csp = response.headers['Content-Security-Policy']
-        assert login['frame_ancestors'], 'No cluster manager origin allowed'
+        def post(path, ticket, expected):
+            request = urllib.request.Request('https://127.0.0.1/admin/' + path,
+                data=urllib.parse.urlencode({'token': ticket + ':' + handle}).encode(),
+                headers={'Host': host, 'Origin': login['frame_ancestors'][0]})
+            try:
+                with opener.open(request, timeout=20) as response:
+                    assert response.status == expected, response.status
+                    return response
+            except urllib.error.HTTPError as error:
+                assert error.code == expected, error.code
+        response = post('', login['ticket'], 200)
+        # The cluster manager on the node may embed the admin page.
+        csp = response.headers['Content-Security-Policy']
         ancestors = csp.split('frame-ancestors', 1)[1].split(';', 1)[0].split()
         assert all(origin in ancestors for origin in login['frame_ancestors'])
-        assert 'token' not in login, 'Backend credential was exported'
         assert any(c.name == 'NS8_ADMIN' for c in jar)
+        # A ticket works once; the module page renews with new ones
+        post('', login['ticket'], 401)
+        renewal = task(f'module/{module}/open-admin', user=username, password=password)
+        post('ns8/renew', renewal['ticket'], 204)
+        print('Admin ticket: single use, session renewed with a new ticket')
         with opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
                 headers={'Host': host}), timeout=20) as response:
             assert isinstance(json.load(response), dict)
@@ -84,14 +97,19 @@ try:
         if index == 1:
             task('cluster/alter-user', {'user': username, 'set': {},
                 'revoke': [{'role': 'owner', 'on': '*'}]})
-            try:
-                opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
-                    headers={'Host': host}), timeout=20)
-            except urllib.error.HTTPError as error:
-                assert error.code == 403, error.code
-            else:
-                raise AssertionError('Existing admin session survived NS8 owner revocation')
-            print('NS8 owner revocation: existing admin session immediately denied')
+            revoked = time.monotonic()
+            task(f'module/{module}/open-admin', user=username, password=password, success=False)
+            # Without new tickets the session ends within its lifetime
+            while True:
+                try:
+                    opener.open(urllib.request.Request('https://127.0.0.1/admin/diagnostics/config',
+                        headers={'Host': host}), timeout=20).close()
+                except urllib.error.HTTPError as error:
+                    assert error.code == 403, error.code
+                    break
+                assert time.monotonic() - revoked < login['session_seconds'] + 30, 'Admin session survived NS8 owner revocation'
+                time.sleep(5)
+            print('NS8 owner revocation: no new ticket, admin session ended within its lifetime')
         print('NS8 administrator: direct admin login successful')
     result = subprocess.run(['runagent', '-m', module, 'api-cli', 'run',
         f'module/{module}/open-admin', '--data', '{}'], capture_output=True)

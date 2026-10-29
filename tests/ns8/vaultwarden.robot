@@ -190,6 +190,8 @@ Every NS8 administrator can open the admin page
     ${out}    ${err}    ${rc} =    Execute Command    python3 /tmp/vw-ns8-admin-access.py ${APP} ${APP_HOST}    return_rc=True    return_stdout=True    return_stderr=True
     Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
     Should Contain    ${out}    NS8 reader: admin access denied
+    Should Contain    ${out}    Admin ticket: single use, session renewed with a new ticket
+    Should Contain    ${out}    NS8 owner revocation: no new ticket, admin session ended within its lifetime
     Should Contain    ${out}    Module self-administration: admin login denied
 
 Concurrent IdP reconciliation and reconfiguration
