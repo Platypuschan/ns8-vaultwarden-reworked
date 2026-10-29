@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Owner-only action: no get-/read- prefix (those are granted to readers)."""
+"""Issue a one-time admin ticket to the NS8 user running this action."""
 import json
+import os
 import subprocess
 import sys
 
+import vaultwarden_admin as admin
 import vaultwarden_config as policy
-from vaultwarden_revoke import read_admin_token
+import vaultwarden_revoke as revoke
 
 with open('settings.json') as stream:
     config = policy.validate(json.load(stream))
-if subprocess.run(['systemctl', '--user', 'is-active', '--quiet', 'vaultwarden.service']).returncode:
-    raise ValueError('Vaultwarden ist noch nicht gestartet. Bitte zuerst konfigurieren.')
+if subprocess.run(['systemctl', '--user', 'is-active', '--quiet', 'vaultwarden.service']).returncode != 0:
+    raise ValueError('Vaultwarden is not running')
 # The UI embeds the admin page only for cluster manager origins Vaultwarden allows.
 ancestors = (policy.env_value('ALLOWED_IFRAME_ANCESTORS') or '').split()
 json.dump({'url': 'https://' + config['host'] + '/admin/',
-    'token': read_admin_token(), 'frame_ancestors': ancestors}, sys.stdout)
+    'ticket': admin.issue_ticket(os.environ.get('AGENT_TASK_USER', '')),
+    'session_seconds': admin.SESSION_SECONDS,
+    'frame_ancestors': ancestors, 'revocation': revoke.status()}, sys.stdout)

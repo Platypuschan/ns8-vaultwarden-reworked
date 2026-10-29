@@ -16,12 +16,9 @@ class FakeAdmin:
         self.calls=[]
     def users(self):
         return [dict(u) for u in self.accounts.values()]
-    def disable(self, user_id):
-        self.calls.append(('disable',user_id))
-        self.accounts[user_id]['userEnabled']=False
-    def enable(self, user_id):
-        self.calls.append(('enable',user_id))
-        self.accounts[user_id]['userEnabled']=True
+    def deauth(self, user_id):
+        self.calls.append(('deauth', user_id))
+
 
 
 class RevokeTests(unittest.TestCase):
@@ -37,32 +34,82 @@ class RevokeTests(unittest.TestCase):
     def reconcile(self, members):
         return revoke.reconcile(self.api,members,self.dir.name)
 
-    def test_non_members_are_disabled_once(self):
-        report=self.reconcile({'alice@example.test','carol@example.test'})
-        self.assertEqual(report,{'disabled':['bob@example.test'],'enabled':[]})
-        self.assertEqual(self.api.calls,[('disable','b')])
-        self.assertEqual(self.reconcile({'alice@example.test'}),{'disabled':[],'enabled':[]})
-        self.assertEqual(len(self.api.calls),1)
-        stored=Path(self.dir.name)/revoke.REVOKED_FILE
-        self.assertEqual(stored.stat().st_mode & 0o777,0o600)
-        self.assertEqual(json.loads(stored.read_text()),{'b':'bob@example.test'})
-
-    def test_members_again_are_enabled_but_not_admin_disabled_accounts(self):
-        self.reconcile({'alice@example.test'})
-        report=self.reconcile({'alice@example.test','bob@example.test','carol@example.test'})
-        self.assertEqual(report,{'disabled':[],'enabled':['bob@example.test']})
+    def test_non_members_are_logged_out_and_never_disabled(self):
+        before = dict(self.api.accounts['b'])
+        report = self.reconcile({'alice@example.test', 'carol@example.test'})
+        self.assertEqual(report, {'deauthenticated': 1, 'failed': 0, 'legacy_disabled': 0})
+        self.assertEqual(self.api.calls, [('deauth', 'b')])
+        self.assertEqual(self.api.accounts['b'], before)
+        self.reconcile({'alice@example.test', 'bob@example.test', 'carol@example.test'})
+        self.assertEqual(len(self.api.calls), 1)
         self.assertFalse(self.api.accounts['c']['userEnabled'])
-        self.assertEqual(json.loads((Path(self.dir.name)/revoke.REVOKED_FILE).read_text()),{})
 
-    def test_account_enabled_by_an_administrator_is_forgotten(self):
-        self.reconcile({'alice@example.test'})
-        self.api.accounts['b']['userEnabled']=True
-        self.reconcile({'alice@example.test','bob@example.test'})
-        self.assertEqual(json.loads((Path(self.dir.name)/revoke.REVOKED_FILE).read_text()),{})
+    def test_legacy_sperren_are_never_automatically_cleared(self):
+        path = Path(self.dir.name) / revoke.REVOKED_FILE
+        path.write_text(json.dumps({'c': 'carol@example.test'}))
+        report = self.reconcile({'alice@example.test', 'bob@example.test', 'carol@example.test'})
+        self.assertFalse(self.api.accounts['c']['userEnabled'])
+        self.assertEqual(self.api.calls, [])
+        self.assertEqual(report['legacy_disabled'], 1)
+        self.assertEqual(json.loads(path.read_text()), {'c': 'carol@example.test'})
 
-    def test_empty_group_disables_everybody(self):
-        report=self.reconcile(set())
-        self.assertEqual(sorted(report['disabled']),['alice@example.test','bob@example.test'])
+    def test_empty_group_logs_out_all_accounts_even_manually_disabled(self):
+        report = self.reconcile(set())
+        self.assertEqual(report['deauthenticated'], 3)
+        self.assertEqual(set(self.api.calls), {('deauth', 'a'), ('deauth', 'b'), ('deauth', 'c')})
+
+    def test_one_failing_user_does_not_stop_the_others(self):
+        original = self.api.deauth
+        def first_fails(user):
+            if user == 'a':
+                raise revoke.RevokeError('Vaultwarden admin API POST users: HTTP 500')
+            original(user)
+        self.api.deauth = first_fails
+        report = self.reconcile(set())
+        self.assertEqual(report['failed'], 1)
+        self.assertEqual(report['deauthenticated'], 2)
+        self.assertEqual(set(self.api.calls), {('deauth', 'b'), ('deauth', 'c')})
+        self.api.deauth = original
+        self.assertEqual(self.reconcile(set())['deauthenticated'], 3)
+        self.assertFalse((Path(self.dir.name) / revoke.REVOKED_FILE).exists())
+
+    def test_unreachable_vaultwarden_stops_the_run(self):
+        def unreachable(user):
+            self.api.calls.append(('deauth', user))
+            raise revoke.UnavailableError('Vaultwarden is not reachable: URLError')
+        self.api.deauth = unreachable
+        with self.assertRaises(revoke.UnavailableError):
+            self.reconcile(set())
+        self.assertEqual(len(self.api.calls), 1)
+
+    def test_status_keeps_the_reason(self):
+        revoke.write_status(error='IdP too old', state_dir=self.dir.name, reason='idp_update_required')
+        self.assertEqual(revoke.status(self.dir.name)['reason'], 'idp_update_required')
+        revoke.write_status(state_dir=self.dir.name)
+        self.assertNotIn('reason', revoke.status(self.dir.name))
+
+    def test_status_preserves_last_success_and_warns_after_repeated_errors(self):
+        success = revoke.write_status(report={'legacy_disabled': 2}, state_dir=self.dir.name)
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'ok')
+        for i in range(3):
+            error = revoke.write_status(error='LDAP unavailable', state_dir=self.dir.name)
+        status = revoke.status(self.dir.name)
+        self.assertEqual(status['state'], 'warning')
+        self.assertEqual(status['last_success'], success['last_success'])
+        self.assertEqual(status['consecutive_errors'], 3)
+        self.assertEqual(status['legacy_disabled'], 2)
+        revoke.write_status(state_dir=self.dir.name)
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'ok')
+
+    def test_monitor_that_never_runs_warns_after_startup_grace(self):
+        from datetime import datetime, timezone, timedelta
+        revoke.initialize_status(self.dir.name)
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'pending')
+        path = Path(self.dir.name) / revoke.STATUS_FILE
+        data = json.loads(path.read_text())
+        data['monitor_started'] = (datetime.now(timezone.utc) - timedelta(minutes=7)).isoformat()
+        path.write_text(json.dumps(data))
+        self.assertEqual(revoke.status(self.dir.name)['state'], 'warning')
 
     def test_members_filter_is_direct_and_excludes_disabled_accounts(self):
         f=revoke.members_filter('CN=g (x),DC=ad,DC=test','(!(sAMAccountName=svc))')

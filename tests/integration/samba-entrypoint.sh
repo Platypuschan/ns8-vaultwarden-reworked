@@ -14,8 +14,8 @@ result = samba_tool('domain', 'provision',
     '--dns-backend=SAMBA_INTERNAL', '--adminpass=' + os.environ['AD_PASSWORD'])
 if result: raise SystemExit(result)
 PROVISION
-samba-tool user create allowed "$AD_PASSWORD" --mail-address=allowed@example.test
-samba-tool user create denied "$AD_PASSWORD" --mail-address=denied@example.test
+samba-tool user create --mail-address=allowed@example.test -- allowed "$AD_PASSWORD"
+samba-tool user create --mail-address=denied@example.test -- denied "$AD_PASSWORD"
 samba-tool group add services_vaultwarden
 samba-tool group addmembers services_vaultwarden allowed
 # Test transport equivalent to the NS8 ldapproxy; internal test network only.

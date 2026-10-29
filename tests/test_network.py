@@ -82,6 +82,37 @@ class NetworkTests(unittest.TestCase):
 
 
 class ConfigureDiscoveryTests(unittest.TestCase):
+    def test_configure_before_prepare_returns_validation_without_side_effects(self):
+        config = {'host': 'vault.test', 'domain': 'ad.test', 'idp_module': 'idp1'}
+        agent = types.ModuleType('agent')
+        tasks = types.ModuleType('agent.tasks')
+        tasks.run = Mock()
+        agent.tasks = tasks
+        agent.exclusive_file_lock = lambda name: contextlib.nullcontext()
+        agent.set_status = Mock()
+        sso = types.ModuleType('vaultwarden_sso')
+        sso.task = Mock()
+        sso.prepare = Mock()
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory), \
+                patch.dict(sys.modules, {'agent': agent, 'agent.tasks': tasks, 'vaultwarden_sso': sso}), \
+                patch.object(sys, 'stdin', io.StringIO(json.dumps(config))), \
+                patch.object(sys, 'stdout', output), patch('subprocess.run') as service:
+            with self.assertRaises(SystemExit) as exit_result:
+                runpy.run_path(str(ROOT / 'imageroot/actions/configure-module/20configure'))
+            self.assertEqual(exit_result.exception.code, 2)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+        agent.set_status.assert_called_once_with('validation-failed')
+        errors = json.loads(output.getvalue())
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]['error'], 'sso_not_prepared')
+        self.assertEqual(errors[0]['parameter'], 'idp_module')
+        self.assertIn('prepare-sso', errors[0]['message'])
+        tasks.run.assert_not_called()
+        sso.task.assert_not_called()
+        sso.prepare.assert_not_called()
+        service.assert_not_called()
+
     def configure(self, lets_encrypt, failure=False):
         config = {'host': 'vault.test', 'domain': 'ad.test', 'idp_module': 'idp1',
             'required_group': 'services_vaultwarden', 'lets_encrypt': lets_encrypt}
@@ -93,7 +124,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
         agent.resolve_agent_id = Mock(return_value='module/traefik1')
         agent.assert_exp = lambda condition, message: self.assertTrue(condition, message)
         sso = types.ModuleType('vaultwarden_sso')
-        sso.task = Mock(return_value={'enforced': True, 'enabled': True,
+        sso.task = Mock(return_value={'enforced': True, 'enabled': True, 'policy_required': True, 'policy_group_pinned': True, 'policy_consumer_bound': True,
             'group_path': '/services_vaultwarden'})
         sso.prepare = Mock(return_value={'issuer': 'https://sso.test/realms/ad.test'})
         sso.configure_admin_route = Mock()
@@ -104,6 +135,7 @@ class ConfigureDiscoveryTests(unittest.TestCase):
                 patch.object(sys, 'stdout', output), \
                 patch.dict('os.environ', {'MODULE_ID': 'vaultwarden1', 'TCP_PORT': '20001'}), \
                 patch('subprocess.run'), \
+                patch('vaultwarden_revoke.initialize_status'), \
                 patch.object(network, 'check_discovery',
                     side_effect=ValueError('OIDC discovery failed') if failure else None) as check:
             if failure:

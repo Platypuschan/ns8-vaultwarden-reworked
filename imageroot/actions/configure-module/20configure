@@ -8,15 +8,24 @@ import agent.tasks
 import vaultwarden_config as policy
 import vaultwarden_sso
 import vaultwarden_network
+import vaultwarden_revoke
 
 config = policy.validate(json.load(sys.stdin))
 with agent.exclusive_file_lock('configuration'):
-    with open('settings.json') as f:
-        previous = json.load(f)
+    try:
+        with open('settings.json') as f:
+            previous = json.load(f)
+    except FileNotFoundError:
+        agent.set_status('validation-failed')
+        json.dump([{'field': 'idp_module', 'parameter': 'idp_module',
+            'value': config['idp_module'], 'error': 'sso_not_prepared',
+            'message': 'Run prepare-sso before configure-module, then apply the IdP group policy.'}], sys.stdout)
+        sys.exit(2)
+
     if any(config[k] != previous[k] for k in ('host', 'domain', 'idp_module')):
         raise ValueError('Prepare SSO first; host/domain/IdP migrations are outside this prototype')
     state = vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']})
-    policy.require_policy(config, state)
+    policy.require_policy(config, state, require_binding=False)
     # Client registration preserves the IdP flow overrides and access attributes.
     registration = vaultwarden_sso.prepare(config)
     policy.require_policy(config, vaultwarden_sso.task(config, 'get-client-access', {'domain': config['domain']}))
@@ -30,6 +39,7 @@ with agent.exclusive_file_lock('configuration'):
     subprocess.run(['systemctl', '--user', 'enable', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'reset-failed', 'vaultwarden.service'], check=True, stdout=sys.stderr)
     subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+    vaultwarden_revoke.initialize_status()
     subprocess.run(['systemctl', '--user', 'enable', '--now', 'vaultwarden-revoke.timer'], check=True, stdout=sys.stderr)
     # Automatic HTTPS must be usable from the application itself, not just
     # from the host. Manually managed certificates may still need installing.

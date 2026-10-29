@@ -3,7 +3,8 @@
   "type": "object",
   "required": [
     "url",
-    "token"
+    "ticket",
+    "session_seconds"
   ],
   "additionalProperties": false,
   "properties": {
@@ -11,16 +12,24 @@
       "type": "string",
       "pattern": "^https://"
     },
-    "token": {
-      "type": "string",
-      "minLength": 43
-    },
     "frame_ancestors": {
       "type": "array",
       "items": {
         "type": "string",
         "pattern": "^https://"
       }
+    },
+    "revocation": {
+      "type": "object"
+    },
+    "ticket": {
+      "type": "string",
+      "minLength": 43,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "session_seconds": {
+      "type": "integer",
+      "minimum": 10
     }
   }
 }

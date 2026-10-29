@@ -1,8 +1,21 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 27.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.5**, weiterhin mit
-**IdP 0.1.0-rc.2**. Der Veröffentlichungsstatus steht beim
-[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.5).
+Stand: 29.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.6** mit
+**IdP 0.1.0-rc.4** (Sicherheitsupdate: Keycloak 26.8.1, Vaultwarden 1.37.4,
+Adminzugang per Einmalticket, gebundene Gruppenregel). Der
+Veröffentlichungsstatus steht beim
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.6).
+
+**Update bestehender Installationen:** zuerst den IdP, dann Vaultwarden.
+
+```bash
+api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/idp-reworked:0.1.0-rc.4","instances":["idp-reworked1"]}'
+api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.6","instances":["vaultwarden-reworked1"]}'
+```
+
+Wird Vaultwarden vor dem IdP aktualisiert, bricht das Update mit einem Hinweis
+ab und alle Vaultwarden-Sitzungen werden beendet, bis der IdP aktualisiert ist.
+
 Die rc.5 öffnet die Adminoberfläche im Anwendungsbereich des Cluster-Managers und ist
 mit Neuinstallation und Update von rc.4 auf Debian13/Rocky9 je 15/15 geprüft;
 [aktuelle Nachweise](RELEASE-0.1.0-rc.5.md).
@@ -60,8 +73,8 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.5'
-VW_IDP_VERSION='0.1.0-rc.2'
+VW_VERSION='0.1.0-rc.6'
+VW_IDP_VERSION='0.1.0-rc.4'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
 ```
@@ -270,19 +283,23 @@ weiteres Zutun bis zum Ablauf des IdP-Tokens (600 Sekunden) bestehen. Der
 Benutzer-Timer `vaultwarden-revoke.timer` des Moduls gleicht deshalb alle zwei
 Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
 
-- Konten, deren `mail` nicht mehr zu einem aktivierten, direkten Mitglied der
-  Gruppe gehört, werden in Vaultwarden deaktiviert. Das löscht alle Geräte des
-  Kontos, setzt den Security-Stamp zurück und meldet verbundene Clients ab.
-- Wird der Benutzer wieder Mitglied, aktiviert der Timer das Konto erneut. Von
-  einem Administrator deaktivierte Konten bleiben deaktiviert
-  (`revoked-users.json` im Modul-State merkt sich die vom Timer gesperrten).
-- Ist das AD nicht erreichbar oder fehlt die Gruppe, ändert der Timer nichts
-  und protokolliert einen Fehler; neue Anmeldungen verweigert dann der IdP.
+- Benutzer, deren `mail` nicht mehr zu einem aktivierten, direkten Mitglied
+  gehört, werden über die Deauth-API abgemeldet. Der Timer ändert keine
+  administrativen Kontosperren und aktiviert keine Konten automatisch.
+- Nach Gruppenwiederaufnahme kann sich ein weiterhin aktiviertes Konto wieder
+  anmelden. Alte automatische Sperren in `revoked-users.json` müssen zunächst
+  manuell geprüft werden; der neue Worker hebt sie nicht eigenständig auf.
+- Bei einer definitiv fehlenden oder abweichenden IdP-Pflichtpolicy beendet der
+  Timer alle Sitzungen. LDAP-/Transportfehler werden im Status ausgewiesen.
 
-Der Timer nutzt die Vaultwarden-Admin-API über den Loopback-Port des Moduls
-mit einem zufälligen `ADMIN_TOKEN` in `vaultwarden.env` (nur dort, Modus 0600).
-Ab rc.4 kann jeder NS8-Administrator die Adminoberfläche direkt über das Vaultwarden-Modul im Cluster-Manager öffnen. Die Modulaktion `open-admin` nutzt die vorhandenen NS8-Owner-Rechte und meldet den Browser automatisch an; Token müssen weder ausgelesen noch eingegeben werden. `/admin` ist erreichbar, administrative Funktionen benötigen weiterhin eine gültige Admin-Sitzung. Vaultwarden protokolliert beim Start eine
-Warnung, weil der Token nicht als Argon2-Hash hinterlegt ist.
+Der interne `ADMIN_TOKEN` bleibt ausschließlich im Modul. Der Browser meldet
+sich über seine NS8-Sitzung an; jede geschützte Anfrage prüft aktuelle
+Cluster-Adminrechte. Der Widerrufsstatus steht in `get-configuration` unter
+`revocation`; wiederholte Fehler oder ein veralteter letzter Erfolg warnen auch
+beim Öffnen des Moduls. Der neue Worker benötigt den passenden gehärteten IdP
+mit `policy_required:true`, `policy_group_pinned:true` und
+`policy_consumer_bound:true`.
+[Verhalten, Update-Reihenfolge und Grenzen](decisions/0006-security-decisions.md).
 
 ```bash
 runagent -m vaultwarden-reworked1 systemctl --user status vaultwarden-revoke.timer

@@ -2,5 +2,5 @@
 set -Eeuo pipefail
 # Source SHA and upstream digest are part of Containerfile; a changed patch or
 # build definition gets a different cache tag.
-checksum="$(cat prototype/vaultwarden/Containerfile prototype/vaultwarden/deny-api-key-sso-only.patch | sha256sum)"
+checksum="$(cat prototype/vaultwarden/Containerfile prototype/vaultwarden/deny-api-key-sso-only.patch prototype/vaultwarden/ns8_admin.rs | sha256sum)"
 printf 'runtime-%s\n' "${checksum:0:16}"

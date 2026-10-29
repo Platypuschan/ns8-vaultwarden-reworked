@@ -1,21 +1,88 @@
+diff --git a/src/api/admin.rs b/src/api/admin.rs
+index 2a84f61..a965c56 100644
+--- a/src/api/admin.rs
++++ b/src/api/admin.rs
+@@ -1,3 +1,6 @@
++#[path = "ns8_admin.rs"]
++mod ns8;
++
+ use std::{env, sync::LazyLock};
+ 
+ use reqwest::Method;
+@@ -48,6 +51,7 @@ pub fn routes() -> Vec<Route> {
+         get_user_json,
+         get_user_by_mail_json,
+         post_admin_login,
++        ns8::renew_session,
+         admin_page,
+         admin_page_login,
+         invite_user,
+@@ -184,6 +188,7 @@ struct LoginForm {
+ #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
+ fn post_admin_login(
+     data: Form<LoginForm>,
++    ns8_login: ns8::Login,
+     cookies: &CookieJar<'_>,
+     ip: ClientIp,
+     secure: Secure,
+@@ -198,6 +203,18 @@ fn post_admin_login(
+         )));
+     }
+ 
++    if ns8::enabled() && !ns8_login.worker {
++        if !ns8_login.origin_allowed {
++            return Err(AdminResponse::Unauthorized(render_admin_login(Some("NS8 origin denied"), None)));
++        }
++        if let Some(session) = ns8::login(&data.token) {
++            cookies.add(Cookie::build((ns8::cookie_name(), session)).path(admin_path())
++                .same_site(SameSite::Strict).http_only(true).secure(secure.https));
++            return Err(AdminResponse::Ok(render_admin_page()));
++        }
++        return Err(AdminResponse::Unauthorized(render_admin_login(Some("NS8 administrator login required"), None)));
++    }
++
+     // If the token is invalid, redirect to login page
+     if validate_token(&data.token) {
+         // If the token received is valid, generate JWT and save it as a cookie
+@@ -347,6 +364,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+ 
+ #[get("/logout")]
+ fn logout(cookies: &CookieJar<'_>) -> Redirect {
++    ns8::logout(cookies);
+     cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
+     Redirect::to(admin_path())
+ }
+@@ -868,6 +886,10 @@ impl<'r> FromRequest<'r> for AdminToken {
+             err_handler!("Error getting Client IP")
+         };
+ 
++        if ns8::enabled() {
++            return if ns8::allowed(request) { Outcome::Success(Self { ip }) } else { ns8::denied() };
++        }
++
+         if !CONFIG.disable_admin_token() {
+             let cookies = request.cookies();
+ 
+diff --git a/src/api/identity.rs b/src/api/identity.rs
+index ac05386..5ce7cbb 100644
 --- a/src/api/identity.rs
 +++ b/src/api/identity.rs
-@@ -85,6 +85,7 @@
-
-             password_login(data, &mut user_id, &conn, &client_header.ip, client_version.as_ref()).await
+@@ -78,6 +78,7 @@ async fn login(data: Form<ConnectData>, client_header: ClientHeaders, conn: DbCo
+ 
+             password_login(data, &mut user_id, &conn, &client_header.ip).await
          }
 +        "client_credentials" if CONFIG.sso_enabled() && CONFIG.sso_only() => err!("SSO sign-in is required"),
          "client_credentials" => {
              check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
              check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
 diff --git a/src/config.rs b/src/config.rs
-index 72b5825..233b009 100644
+index 7d35461..272b624 100644
 --- a/src/config.rs
 +++ b/src/config.rs
 @@ -21,6 +21,15 @@ use crate::{
      },
  };
-
+ 
 +// The NS8 module owns these values; the rest of the admin settings stay editable.
 +fn ns8_managed(name: &str) -> bool {
 +    get_env_bool("NS8_MANAGED_CONFIG").unwrap_or(false)
@@ -31,7 +98,7 @@ index 72b5825..233b009 100644
 @@ -266,9 +275,17 @@ macro_rules! make_config {
                  serde_json::from_slice(&config_bytes.to_vec()).map_err(Into::into)
              }
-
+ 
 +            fn clear_ns8_managed(&mut self) {
 +                $($(
 +                    if ns8_managed(stringify!($name)) {
@@ -47,22 +114,31 @@ index 72b5825..233b009 100644
                          self.$name = None;
                      }
                  )+)+
-@@ -393,7 +410,7 @@ macro_rules! make_config {
+@@ -393,10 +410,14 @@ macro_rules! make_config {
                          elements: vec![
                          $( // This repetition is for each element within a group
                              ElementData {
 -                                editable: $editable,
 +                                editable: $editable && !ns8_managed(stringify!($name)),
                                  name: stringify!($name),
-                                 value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
-                                 default: serde_json::to_value(&def.$name).unwrap_or_default(),
-@@ -1444,7 +1461,8 @@ impl Config {
+-                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
+-                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
++                                value: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
++                                    serde_json::Value::String("********".into())
++                                } else { serde_json::to_value(&cfg.$name).unwrap_or_default() },
++                                default: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
++                                    serde_json::Value::String("********".into())
++                                } else { serde_json::to_value(&def.$name).unwrap_or_default() },
+                                 r#type: get_form_type(stringify!($ty)),
+                                 doc: get_doc(concat!($($doc),+)),
+                                 overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
+@@ -1436,7 +1457,8 @@ impl Config {
      pub async fn load() -> Result<Self, Error> {
          // Loading from env and file
          let env = ConfigBuilder::from_env();
 -        let usr = ConfigBuilder::from_file().await.unwrap_or_default();
 +        let mut usr = ConfigBuilder::from_file().await.unwrap_or_default();
 +        usr.clear_ns8_managed();
-
+ 
          // Create merged config, config file overwrites env
          let mut overrides = Vec::new();

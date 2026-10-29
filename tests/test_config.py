@@ -19,6 +19,31 @@ class ConfigTests(unittest.TestCase):
             'client_id':'vaultwarden1','client_secret':'test-only-secret'}
         self.token='t'*64
 
+    def test_upgrade_rotates_only_the_formerly_exported_worker_credential(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vaultwarden.env'
+            path.write_text('ADMIN_TOKEN=previously-exported\nSSO_CLIENT_SECRET=keep-this\nDOMAIN=https://vault.example.test\n')
+            policy.rotate_worker_token(path)
+            values = dict(line.split('=', 1) for line in path.read_text().splitlines())
+            self.assertTrue(values['ADMIN_TOKEN'] != 'previously-exported')
+            self.assertRegex(values['ADMIN_TOKEN'], policy.ADMIN_TOKEN)
+            self.assertEqual(values['SSO_CLIENT_SECRET'], 'keep-this')
+            self.assertEqual(values['DOMAIN'], 'https://vault.example.test')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_policy_changes_require_explicit_matching_reconfiguration(self):
+        state = {'enforced': False, 'enabled': True, 'group_path': '/services_vaultwarden',
+            'issues': ['expected_group_mismatch'], 'policy_required': True,
+            'policy_group_pinned': False, 'policy_consumer_bound': True}
+        # Preflight may validate the newly proposed group before registration
+        # binds it; the runtime worker must still reject this state.
+        policy.require_policy(self.config, state, require_binding=False)
+        with self.assertRaises(ValueError):
+            policy.require_policy(self.config, state)
+        state['group_path'] = '/some-other-group'
+        with self.assertRaises(ValueError):
+            policy.require_policy(self.config, state, require_binding=False)
+
     def test_sso_policy_cannot_fall_back_to_password(self):
         env=policy.environment(policy.validate(self.config),self.registration,self.token)
         parsed=dict(line.split('=',1) for line in env.splitlines())
@@ -75,10 +100,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_unprotected_or_wrong_group_rejected(self):
         for state in [{},{'enforced':False},{'enforced':True,'enabled':False,'group_path':'/services_vaultwarden'},
-                      {'enforced':True,'enabled':True,'group_path':'/other'}]:
+                      {'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'policy_consumer_bound':True,'group_path':'/other'}]:
             with self.subTest(state=state),self.assertRaises(ValueError):
                 policy.require_policy(self.config,state)
-        policy.require_policy(self.config,{'enforced':True,'enabled':True,'group_path':'/services_vaultwarden'})
+        policy.require_policy(self.config,{'enforced':True,'enabled':True,'policy_required':True,'policy_group_pinned':True,'policy_consumer_bound':True,'group_path':'/services_vaultwarden'})
 
     def test_secret_write_is_private_and_replaces_atomically(self):
         with tempfile.TemporaryDirectory() as d:

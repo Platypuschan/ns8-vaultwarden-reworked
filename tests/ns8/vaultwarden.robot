@@ -33,11 +33,14 @@ Discovery is reachable from app
     ${metadata} =    Evaluate    json.loads($out)    modules=json
     Should Be Equal    ${metadata['issuer']}    https://${IDP_HOST}/realms/${DOMAIN}
 
+IdP client identity
+    ${out}    ${rc} =    Execute Command    runagent -m ${IDP} python3 -c 'import json,hashlib,kcadmin; k=kcadmin.agent_client(); c=k.find_client("${DOMAIN}","${APP}"); secret=k.get("/${DOMAIN}/clients/"+c["id"]+"/client-secret")["value"]; print(json.dumps({"realm":k.get("/${DOMAIN}")["id"],"client":c["id"],"group":c["attributes"]["ns8.access_group_id"],"secret_sha256":hashlib.sha256(secret.encode()).hexdigest()},sort_keys=True))'    return_rc=True
+    Should Be Equal As Integers    ${rc}    0
+    RETURN    ${out}
+
 *** Test Cases ***
-Install IdP and released Vaultwarden rc.4 for upgrade
-    ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
-    ${idp_image} =    Evaluate    $idp_image.strip()
-    ${out}    ${rc} =    Execute Command    add-module ${idp_image} 1    return_rc=True
+Install released IdP rc.3 and Vaultwarden rc.4 for upgrade
+    ${out}    ${rc} =    Execute Command    add-module ghcr.io/platypuschan/idp-reworked:0.1.0-rc.3 1    return_rc=True
     Should Be Equal As Integers    ${rc}    0    ${out}
     ${data} =    Evaluate    ast.literal_eval($out)    modules=ast
     Set Suite Variable    ${IDP}    ${data['module_id']}
@@ -84,13 +87,40 @@ Activate application and verify private settings
     Should Be Equal As Integers    ${rc}    0
     Policy is enforced
 
+Upgrade configured IdP rc.3 while preserving realm and client identity
+    ${before} =    IdP client identity
+    ${idp_image} =    OperatingSystem.Get File    ${CURDIR}/../../IDP_IMAGE
+    ${idp_image} =    Evaluate    $idp_image.strip()
+    Run task    cluster/update-module    {"module_url":"${idp_image}","instances":["${IDP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    180s    3s    Discovery is reachable from app
+    Wait Until Keyword Succeeds    120s    3s    Policy is enforced
+    ${after} =    IdP client identity
+    Should Be Equal    ${before.strip()}    ${after.strip()}
+    ${expected} =    Execute Command    runagent -m ${IDP} printenv IDP_REWORKED_KEYCLOAK_IMAGE
+    ${running} =    Execute Command    runagent -m ${IDP} podman inspect --format '{{.ImageName}}' keycloak
+    Should Be Equal    ${running.strip()}    ${expected.strip()}
+
+Public Keycloak admin paths are blocked while the home redirect remains public
+    ${ip} =    Execute Command    hostname -I | awk '{print $1}'
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/admin/realms
+    Should Be Equal    ${code}    403
+    ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/realms/master/ns8-home
+    Should Be Equal    ${code}    302
+
 Upgrade configured rc.4 to corrected package
-    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS)=' vaultwarden.env | sha256sum"
+    ${worker_before} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
+    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS)=' vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
-    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS)=' vaultwarden.env | sha256sum"
+    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS)=' vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    ${worker_after} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
+    Should Not Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
+    ${required} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${APP}"}
+    Should Be True    ${required['policy_required']}
+    Should Be True    ${required['policy_group_pinned']}
+    Should Be True    ${required['policy_consumer_bound']}
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
     # The update lets the cluster manager on the node embed the admin page.
@@ -143,10 +173,10 @@ Revocation timer and authenticated admin pages
     Should Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    # Admin login is reachable; administrative APIs still require a cookie.
+    # Anonymous admin navigation is denied; the NS8 UI uses its authenticated POST bridge.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin
-    Should Be Equal    ${code}    200
+    Should Be Equal    ${code}    403
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/alive
     Should Be Equal    ${code}    200
     # The timer service binds to LDAP and logs in to the admin API
@@ -160,6 +190,8 @@ Every NS8 administrator can open the admin page
     ${out}    ${err}    ${rc} =    Execute Command    python3 /tmp/vw-ns8-admin-access.py ${APP} ${APP_HOST}    return_rc=True    return_stdout=True    return_stderr=True
     Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
     Should Contain    ${out}    NS8 reader: admin access denied
+    Should Contain    ${out}    Admin ticket: single use, session renewed with a new ticket
+    Should Contain    ${out}    NS8 owner revocation: no new ticket, admin session ended within its lifetime
     Should Contain    ${out}    Module self-administration: admin login denied
 
 Concurrent IdP reconciliation and reconfiguration

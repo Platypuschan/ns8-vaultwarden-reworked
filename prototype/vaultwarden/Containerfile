@@ -2,14 +2,15 @@
 FROM docker.io/library/rust:1.97.1-slim-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git pkg-config libssl-dev build-essential ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN git init . && git remote add origin https://github.com/dani-garcia/vaultwarden.git && git fetch --depth=1 origin 46d71107f5094460dd5ecbe1dbac6e6c71e5189a && git checkout --detach FETCH_HEAD
+RUN git init . && git remote add origin https://github.com/dani-garcia/vaultwarden.git && git fetch --depth=1 origin 7c188967e7a467b19b2757bc3326f9cf3ccae327 && git checkout --detach FETCH_HEAD
 COPY deny-api-key-sso-only.patch /tmp/deny-api-key.patch
 RUN git apply --check /tmp/deny-api-key.patch && git apply /tmp/deny-api-key.patch
-ENV CARGO_BUILD_JOBS=2 CARGO_PROFILE_RELEASE_LOW_LTO=false VW_VERSION=1.37.2-group-prototype
+COPY ns8_admin.rs /src/src/api/ns8_admin.rs
+ENV CARGO_BUILD_JOBS=2 CARGO_PROFILE_RELEASE_LOW_LTO=false VW_VERSION=1.37.4-group-prototype
 RUN cargo build --locked --profile release-low --features sqlite
-FROM docker.io/vaultwarden/server@sha256:5d326778c22f063d093d6b0c9c766a28249561632266776f2c93132ab0ad3a80
+FROM docker.io/vaultwarden/server@sha256:2bb2e0344616c62a6d76ea10558497499f8ed3f731400e143dc7bf17b757b5b9
 COPY --from=build /src/target/release-low/vaultwarden /vaultwarden
 LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden-reworked" \
-      org.opencontainers.image.version="1.37.2-group-prototype" \
-      org.opencontainers.image.revision="46d71107f5094460dd5ecbe1dbac6e6c71e5189a" \
-      org.opencontainers.image.description="Vaultwarden 1.37.2 prototype: refuse API-key grant in SSO-only mode"
+      org.opencontainers.image.version="1.37.4-group-prototype" \
+      org.opencontainers.image.revision="7c188967e7a467b19b2757bc3326f9cf3ccae327" \
+      org.opencontainers.image.description="Vaultwarden 1.37.4 prototype: refuse API-key grant in SSO-only mode"

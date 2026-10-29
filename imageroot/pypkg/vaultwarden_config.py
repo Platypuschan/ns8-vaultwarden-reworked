@@ -7,6 +7,8 @@ import secrets
 import tempfile
 from urllib.parse import urlsplit
 
+from vaultwarden_admin import SESSION_SECONDS
+
 
 ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
 HOST = re.compile(r'(?=.{1,253}\Z)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\Z')
@@ -60,8 +62,10 @@ def environment(config, registration, admin_token, ancestors=''):
         'EMAIL_CHANGE_ALLOWED': 'false', 'PUSH_ENABLED': 'false',
         'ROCKET_PORT': '80', 'IP_HEADER': 'X-Forwarded-For',
         'IP_HEADER_TRUSTED_PROXIES': 'local',
-        # Used by automatic NS8-owner login and the local revocation timer.
+        # Used by the local revocation timer only; NS8 admins log in with
+        # one-time tickets of open-admin.
         'ADMIN_TOKEN': admin_token,
+        'NS8_ADMIN_SESSION_SECONDS': str(SESSION_SECONDS),
         # Opening the module performs an automatic login. Leave room for
         # repeated visits and several NS8 admins behind the same address.
         'ADMIN_RATELIMIT_MAX_BURST': '30',
@@ -73,8 +77,15 @@ def environment(config, registration, admin_token, ancestors=''):
     return ''.join(f'{k}={v}\n' for k, v in values.items())
 
 
-def require_policy(config, state):
-    if (state.get('enforced') is not True or state.get('enabled') is not True
+def require_policy(config, state, require_binding=True):
+    if require_binding and 'policy_consumer_bound' not in state:
+        raise ValueError('Update the IdP module first: required group protection is unavailable')
+    if require_binding and any(state.get(field) is not True for field in
+            ('policy_required', 'policy_group_pinned', 'policy_consumer_bound')):
+        raise ValueError('IdP group policy is not bound to the configured group')
+    enforced = state.get('enforced') is True or (not require_binding
+        and state.get('enforced') is False and set(state.get('issues') or []) == {'expected_group_mismatch'})
+    if (not enforced or state.get('enabled') is not True
             or state.get('group_path') != '/' + config['required_group']):
         raise ValueError('IdP group policy is missing, disabled or differs from required_group')
 
@@ -112,3 +123,10 @@ def private_write(path, text):
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
+
+
+def rotate_worker_token(env_path='vaultwarden.env'):
+    """Invalidate the internal credential exported by pre-bridge releases."""
+    with open(env_path) as stream:
+        lines = [line for line in stream.read().splitlines() if not line.startswith('ADMIN_TOKEN=')]
+    private_write(env_path, '\n'.join(lines + ['ADMIN_TOKEN=' + secrets.token_urlsafe(48)]) + '\n')
