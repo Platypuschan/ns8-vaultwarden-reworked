@@ -7,7 +7,7 @@ Ab rc.3 wird ein lokaler IdP unter `pasta` automatisch über Podmans Host-Gatewa
 Die Runtime sperrt zusätzlich persönliche API-Key-Gerätelogins im SSO-only-Modus. Mitgliedschaft wird durch den IdP bei neuen Anmeldungen und Token-Erneuerung geprüft. Ein Timer des Moduls meldet alle zwei Minuten Benutzer ab, die nicht mehr in der Gruppe sind, ohne administrative Kontosperren zu verändern ([Widerruf](docs/INSTALL-IDP.md#widerruf-bestehender-sitzungen)). Offline-Tresore auf den Geräten lassen sich serverseitig nicht löschen.
 
 - [Installation und Aktivierung](docs/INSTALL-IDP.md)
-- [Release-Prüfnachweise und Image-Digests](docs/RELEASE-0.1.0-rc.5.md) ([rc.4](docs/RELEASE-0.1.0-rc.4.md), [rc.1](docs/RELEASE-0.1.0-rc.1.md))
+- [Release-Prüfnachweise und Image-Digests](docs/RELEASE-0.1.0-rc.6.md) ([rc.5](docs/RELEASE-0.1.0-rc.5.md), [rc.4](docs/RELEASE-0.1.0-rc.4.md), [rc.1](docs/RELEASE-0.1.0-rc.1.md))
 - [Release-Ablauf](docs/PRERELEASE.md)
 - [Historische Prototyp-Prüfnachweise](docs/TESTING.md)
 - Entscheidungen: [ADR 0003 Widerruf-Timer](docs/decisions/0003-revocation-timer.md)
