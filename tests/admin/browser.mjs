@@ -53,9 +53,10 @@ try {
       assert.equal(new URL(page.url()).hostname, 'cluster.example.test');
       console.log('Browser reader: no admin navigation');
     } else if (role === 'public-suffix') {
+      // User decision 29.10.2026: no tab fallback beside the embedded page.
+      // Across two distinct sites the Strict cookie stays unavailable.
       const suffixVault = vault.replace('vault.example.test', 'vault.one.co.uk');
       const application = page.frameLocator('iframe').first();
-      await application.locator('#open').filter({hasText: 'In neuem Tab öffnen'}).waitFor();
       let embedded;
       for (let i = 0; i < 100; i++) {
         embedded = page.frames().find(frame => frame.url() === suffixVault + '/admin/');
@@ -64,14 +65,11 @@ try {
       }
       assert(embedded);
       await embedded.locator('#config-form').waitFor();
+      assert(!(await application.locator('#open').isVisible()));
       const blocked = await embedded.evaluate(async () => (await fetch('/admin/users')).status);
       assert.equal(blocked, 403, 'Strict cookie must be unavailable across two distinct co.uk sites');
-      const [tab] = await Promise.all([context.waitForEvent('page'), application.locator('#open').click()]);
-      await tab.waitForURL(suffixVault + '/admin/', {timeout: 30000});
-      await tab.locator('#config-form').waitFor();
-      assert.equal(await tab.evaluate(async () => (await fetch('/admin/users')).status), 200);
       assert(page.url().startsWith(manager));
-      console.log('Browser public suffix: cross-site Strict cookie rejected, explicit tab authenticated successfully');
+      console.log('Browser public suffix: embedded without fallback, cross-site Strict cookie rejected');
     } else if (role === 'tab') {
       const frame = page.frameLocator('iframe').first();
       await frame.locator('#status').filter({hasText: 'neuem Tab'}).waitFor();
@@ -86,6 +84,21 @@ try {
     } else {
       let frame = await adminFrame(page);
       assert.equal(context.pages().length, 1);
+      // Only the admin frame, over the whole application area
+      const application = page.frameLocator('iframe').first();
+      for (const selector of ['h1', '#status', '#open'])
+        assert(!(await application.locator(selector).isVisible()), selector + ' must be hidden');
+      assert(!(await application.locator('#warning').isVisible()), 'no warning bar over the admin frame');
+      const notices = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+      if (role === 'owner1') {
+        assert(notices.some(n => n.startsWith('warning:') && n.includes('Zugriffswiderruf')), notices.join());
+      } else {
+        assert.deepEqual(notices, []);
+      }
+      const area = await page.locator('iframe').first().boundingBox();
+      const admin = await application.locator('#admin-frame').boundingBox();
+      assert(Math.abs(admin.width - area.width) <= 1 && Math.abs(admin.height - area.height) <= 1,
+        `admin frame ${admin.width}x${admin.height} must fill ${area.width}x${area.height}`);
       const cookies = await context.cookies(vault + '/admin/');
       assert(cookies.some(cookie => cookie.name === 'NS8_ADMIN' && cookie.httpOnly && cookie.secure));
       assert(await frame.locator('#input_sso_enabled').isDisabled());
@@ -133,7 +146,8 @@ try {
         await control.close();
         await page.waitForTimeout(20000);
         assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 403);
-        await page.frameLocator('iframe').first().locator('#status').filter({hasText: 'nicht verlängert'}).waitFor();
+        const ended = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+        assert(ended.some(n => n.startsWith('warning:') && n.includes('nicht verlängert')), ended.join());
         console.log('Browser owner2: session renewed while open, ended after the NS8 right was revoked');
       }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');

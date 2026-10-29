@@ -36,9 +36,18 @@ class BindingTests(unittest.TestCase):
                         patch.object(module.socket,'getfqdn',return_value='node2.example.test'):
                     module.prepare({'host':'vault.test','domain':'ad.test','idp_module':'idp1','required_group':'services_vaultwarden'})
             self.env=dict(line.split('=',1) for line in write.call_args_list[0].args[1].splitlines())
+            self.module=module
         finally:
             sys.path.pop(0)
         return agent,tasks
+
+    def test_only_quiet_tasks_hide_the_completion_notification(self):
+        _,tasks=self.run_prepare(['ad.test'])
+        # User-started registration keeps the normal NS8 notification
+        self.assertEqual(tasks.run.call_args.kwargs['extra'],{})
+        config={'idp_module':'idp1'}
+        self.module.task(config,'get-client-access',{'domain':'ad.test'},quiet=True)
+        self.assertEqual(tasks.run.call_args.kwargs['extra'],{'isNotificationHidden':True})
 
     def test_existing_binding_is_not_republished(self):
         agent,tasks=self.run_prepare(['ad.test'])

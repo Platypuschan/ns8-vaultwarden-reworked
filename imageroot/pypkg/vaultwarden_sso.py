@@ -7,8 +7,11 @@ import agent.tasks
 import vaultwarden_config as policy
 
 
-def task(config, action, data):
-    response = agent.tasks.run(agent_id='module/' + config['idp_module'], action=action, data=data)
+def task(config, action, data, quiet=False):
+    # The cluster manager notifies every task without isNotificationHidden;
+    # it still shows failed ones
+    extra = {'isNotificationHidden': True} if quiet else {}
+    response = agent.tasks.run(agent_id='module/' + config['idp_module'], action=action, data=data, extra=extra)
     agent.assert_exp(response['exit_code'] == 0, f'IdP {action} failed')
     # NS8 task output is a JSON string, not a dictionary.
     output = response['output']

@@ -8,6 +8,11 @@
 body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; color: #161616; background: #f4f4f4; }
 button { font: inherit; background: #0f62fe; color: white; border: 0; padding: .8rem 1.2rem; cursor: pointer; }
 button:disabled { opacity: .5; }
+/* Embedded: only the admin page, over the whole application area;
+   warnings go to the NS8 notifications */
+body.embedded { margin: 0; overflow: hidden; }
+body.embedded > :not(#admin-frame) { display: none; }
+#admin-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
 </style>
 <h1>Vaultwarden</h1>
 <p id="status" role="status">Adminoberfläche wird geöffnet …</p>

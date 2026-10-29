@@ -13,6 +13,19 @@
   let newTab = false;
   let renewal = null;
 
+  // A warning in the NS8 notification drawer, shown as a toast; outside the
+  // cluster manager it stays on this page.
+  function notify(id, message) {
+    const core = window.parent.core;
+    const app = core && core.$children.find(child => typeof child.createNotification === "function");
+    if (!app) {
+      document.getElementById("warning").textContent = message;
+      return;
+    }
+    app.createNotification({ id: `vaultwarden-${id}-${crypto.randomUUID()}`, title: "Vaultwarden",
+      description: message, type: "warning" });
+  }
+
   // Run open-admin: NS8 checks the rights of the current user and the
   // action returns a one-time ticket for Vaultwarden.
   function openAdminTask() {
@@ -66,7 +79,9 @@
           credentials: "omit", body: new URLSearchParams({ token: result.ticket + ":" + handle }) }).catch(() => {});
       } catch (error) {
         clearInterval(renewal);
-        status.textContent = "Die Adminsitzung kann nicht verlängert werden und endet in Kürze. " + (error.message || "");
+        const message = "Die Adminsitzung kann nicht verlängert werden und endet in Kürze. " + (error.message || "");
+        status.textContent = message;
+        notify("session", message);
       }
     };
     renewal = setInterval(renew, Math.max(5, seconds / 4) * 1000);
@@ -77,11 +92,11 @@
     status.textContent = "Adminoberfläche wird geöffnet …";
     try {
       const result = await openAdminTask();
-      const warning = document.getElementById("warning");
       const revocation = result.revocation || {};
-      warning.textContent = revocation.reason === "idp_update_required"
+      const problem = revocation.reason === "idp_update_required"
         ? "Das IdP-Modul ist zu alt: Alle Vaultwarden-Sitzungen werden beendet, bis das IdP-Modul aktualisiert ist."
         : revocation.state === "warning" ? "Der automatische Zugriffswiderruf ist gestört. Bitte den Modulstatus prüfen." : "";
+      if (problem) notify("revocation", problem);
       const destination = adminDestination(result);
       const cluster = window.parent.location;
       const embed = !tab && (result.frame_ancestors || []).includes(cluster.origin);
@@ -98,7 +113,6 @@
         const frame = document.createElement("iframe");
         frame.id = frame.name = "admin-frame";
         frame.title = "Vaultwarden Administration";
-        frame.style.cssText = "width:100%;height:85vh;border:0";
         document.body.appendChild(frame);
       }
       form.target = embed ? "admin-frame" : tabName;
@@ -109,7 +123,8 @@
       document.body.appendChild(form);
       form.submit();
       form.remove();
-      if (embed) newTab = true;
+      // Embedded, the page shows only the admin frame
+      if (embed) document.body.classList.add("embedded");
       startRenewal(result.session_seconds || 120);
       status.textContent = tab
         ? "Adminoberfläche im neuen Tab geöffnet. Diese Seite offen lassen: sie verlängert die Adminsitzung."
