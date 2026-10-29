@@ -66,7 +66,10 @@
           credentials: "omit", body: new URLSearchParams({ token: result.ticket + ":" + handle }) }).catch(() => {});
       } catch (error) {
         clearInterval(renewal);
-        status.textContent = "Die Adminsitzung kann nicht verlängert werden und endet in Kürze. " + (error.message || "");
+        // The warning stays visible above the embedded admin page
+        const message = "Die Adminsitzung kann nicht verlängert werden und endet in Kürze. " + (error.message || "");
+        status.textContent = message;
+        document.getElementById("warning").textContent = message;
       }
     };
     renewal = setInterval(renew, Math.max(5, seconds / 4) * 1000);
@@ -98,7 +101,6 @@
         const frame = document.createElement("iframe");
         frame.id = frame.name = "admin-frame";
         frame.title = "Vaultwarden Administration";
-        frame.style.cssText = "width:100%;height:85vh;border:0";
         document.body.appendChild(frame);
       }
       form.target = embed ? "admin-frame" : tabName;
@@ -109,7 +111,8 @@
       document.body.appendChild(form);
       form.submit();
       form.remove();
-      if (embed) newTab = true;
+      // Embedded, the page shows only the admin frame
+      if (embed) document.body.classList.add("embedded");
       startRenewal(result.session_seconds || 120);
       status.textContent = tab
         ? "Adminoberfläche im neuen Tab geöffnet. Diese Seite offen lassen: sie verlängert die Adminsitzung."

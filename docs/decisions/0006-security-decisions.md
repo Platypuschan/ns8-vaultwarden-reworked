@@ -56,8 +56,17 @@ is active. The public static-token login cannot bypass the bridge. Login POSTs
 from browsers require an explicitly permitted origin. Existing login rate
 limits remain in place; no new P3 brute-force policy is introduced.
 
-The admin page opens in a child iframe, leaving a permanent new-tab button
-available. No guessed last-two-domain-label rule is used. If Strict cookies or
+The admin page opens in a child iframe. Superseded on 29 October 2026 (user
+decision): once embedded, the module page shows only the admin frame over the
+whole application area, without heading, status or new-tab button; warnings
+appear as a narrow bar above it. The new-tab button remains only where the
+cluster manager may not embed the page. Consequence: if the browser withholds
+the Strict cookie inside the frame (cluster manager and Vaultwarden on two
+different sites, e.g. two co.uk domains), admin actions fail in the frame and
+no fallback is offered.
+
+Originally: the admin page opens in a child iframe, leaving a permanent new-tab
+button available. No guessed last-two-domain-label rule is used. If Strict cookies or
 browser framing restrictions prevent embedding, the explicit tab flow works
 without taking over the cluster manager. General vault CSP policy is not
 changed by P17A.
@@ -97,6 +106,10 @@ idp_update_required and open-admin shows that the IdP needs an update; the updat
 hook stops with the same instruction. A user whose sessions cannot be ended no
 longer stops the run: the other users are processed and the run reports the
 failures (reason deauth_failed). Only an unreachable Vaultwarden stops a run.
+
+The timer's policy check runs as an IdP task every two minutes. It sets
+isNotificationHidden, so the cluster manager shows no "completed" notification
+for it; failed checks are still notified by NS8 (29 October 2026).
 
 revocation-status.json contains last attempt, last success, a safe failure code,
 consecutive errors and a count of legacy locks. get-configuration returns it;

@@ -16,7 +16,8 @@ reason = None
 try:
     with open('settings.json') as f:
         config = json.load(f)
-    state = sso.task(config, 'get-client-access', {'domain': config['domain']})
+    # Runs every two minutes: no "completed" notification in the cluster manager
+    state = sso.task(config, 'get-client-access', {'domain': config['domain']}, quiet=True)
     try:
         policy.require_policy(config, state)
     except ValueError:

@@ -99,7 +99,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
               const response=await fetch('/test-task?role=ROLE',{method:'POST'});
               const event=`open-admin-${response.ok?'completed':'aborted'}-${request.extra.eventId}`;
               const fn=events.get(event); if(fn) fn(null,{output:response.ok?await response.json():null});
-            }}]};</script><iframe src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role)
+            }}]};</script><iframe style="position:absolute;top:48px;left:256px;width:1000px;height:700px;border:none" src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role)
             self.send(200, body.encode())
         elif self.path.startswith('/cluster-admin/apps/') and self.path.endswith('/index.html'):
             self.send(200, (ROOT / 'ui/index.html').read_bytes())
