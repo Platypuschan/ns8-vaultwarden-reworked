@@ -583,13 +583,13 @@ class LoginTests(unittest.TestCase):
         self.assertEqual(session.status_code,200,session.text[:300])
         self.assertEqual(members(),{'allowed@example.test'})
         # Nothing to do while the user is a member
-        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'legacy_disabled':0})
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'failed':0,'legacy_disabled':0})
         self.assertEqual(self.refresh(session.json()['refresh_token']).status_code,200)
         cmd('podman','exec',self.samba,'samba-tool','group','removemembers','services_vaultwarden','allowed')
         try:
             self.assertEqual(members(),set())
             report=vaultwarden_revoke.reconcile(api,members(),state_dir)
-            self.assertEqual(report,{'deauthenticated':1,'legacy_disabled':0})
+            self.assertEqual(report,{'deauthenticated':1,'failed':0,'legacy_disabled':0})
             account=next(u for u in api.users() if u['email']=='allowed@example.test')
             self.assertTrue(account['userEnabled'])
             # The existing device session cannot be refreshed any more
@@ -600,13 +600,13 @@ class LoginTests(unittest.TestCase):
             cmd('podman','exec',self.samba,'samba-tool','group','addmembers','services_vaultwarden','allowed')
         # Member again: the account was never disabled; a new login works
         report=vaultwarden_revoke.reconcile(api,members(),state_dir)
-        self.assertEqual(report,{'deauthenticated':0,'legacy_disabled':0})
+        self.assertEqual(report,{'deauthenticated':0,'failed':0,'legacy_disabled':0})
         session=self.mobile_login('allowed')
         self.assertEqual(session.status_code,200,session.text[:300])
         # An account disabled by an administrator stays disabled
         account=next(u for u in api.users() if u['email']=='allowed@example.test')
         api.request('POST', '/admin/users/' + account['id'] + '/disable')
-        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'legacy_disabled':0})
+        self.assertEqual(vaultwarden_revoke.reconcile(api,members(),state_dir),{'deauthenticated':0,'failed':0,'legacy_disabled':0})
         self.assertFalse(next(u for u in api.users() if u['id']==account['id'])['userEnabled'])
         api.request('POST', '/admin/users/' + account['id'] + '/enable')
         # The admin session cookie is kept for the next runs
