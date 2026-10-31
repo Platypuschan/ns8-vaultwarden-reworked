@@ -1,24 +1,29 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 29.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.6** mit
+Stand: 31.10.2026. Vaultwarden-Vorabversion **0.1.0-rc.8** mit
 **IdP 0.1.0-rc.4** (Sicherheitsupdate: Keycloak 26.8.1, Vaultwarden 1.37.4,
 Adminzugang per Einmalticket, gebundene Gruppenregel). Der
 Veröffentlichungsstatus steht beim
-[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.6).
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.8).
 
-**Update bestehender Installationen:** zuerst den IdP, dann Vaultwarden.
+**Update bestehender Installationen:** IdP muss mindestens rc.4 sein; falls
+er bereits rc.4 ist, genügt das Vaultwarden-Update. Andernfalls zuerst den
+IdP, dann Vaultwarden aktualisieren.
 
 ```bash
 api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/idp-reworked:0.1.0-rc.4","instances":["idp-reworked1"]}'
-api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.6","instances":["vaultwarden-reworked1"]}'
+api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.8","instances":["vaultwarden-reworked1"]}'
 ```
 
 Wird Vaultwarden vor dem IdP aktualisiert, bricht das Update mit einem Hinweis
 ab und alle Vaultwarden-Sitzungen werden beendet, bis der IdP aktualisiert ist.
 
+Die rc.8 erhält angemeldete Geräte unabhängig vom IdP-Sitzungsende.
+[Release-Prüfnachweise und Android-Test](RELEASE-0.1.0-rc.8.md).
+
 Die rc.6 ist mit Neuinstallation, gemeinsamem Update von IdP rc.3 und
 Vaultwarden rc.4 auf Debian13/Rocky9 je 17/17 geprüft;
-[aktuelle Nachweise](RELEASE-0.1.0-rc.6.md).
+[damalige Nachweise](RELEASE-0.1.0-rc.6.md).
 
 Die rc.5 öffnet die Adminoberfläche im Anwendungsbereich des Cluster-Managers und ist
 mit Neuinstallation und Update von rc.4 auf Debian13/Rocky9 je 15/15 geprüft;
@@ -77,7 +82,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.6'
+VW_VERSION='0.1.0-rc.8'
 VW_IDP_VERSION='0.1.0-rc.4'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"
