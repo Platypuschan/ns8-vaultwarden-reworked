@@ -107,13 +107,19 @@ Public Keycloak admin paths are blocked while the home redirect remains public
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${IDP_HOST}:443:${ip.strip()} https://${IDP_HOST}/realms/master/ns8-home
     Should Be Equal    ${code}    302
 
-Upgrade configured rc.4 to corrected package
+Upgrade configured installation to released rc.7 before regression check
+    Run task    cluster/update-module    {"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.7","instances":["${APP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+    ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_AUTH_ONLY_NOT_SESSION=false' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
+Upgrade configured rc.7 to persistent device sessions
     ${worker_before} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
-    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS)=' vaultwarden.env | sha256sum"
+    ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS|SSO_AUTH_ONLY_NOT_SESSION)=' vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
     Wait Until Keyword Succeeds    120s    3s    App is healthy
-    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS)=' vaultwarden.env | sha256sum"
+    ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS|SSO_AUTH_ONLY_NOT_SESSION)=' vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     ${worker_after} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
     Should Not Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
@@ -123,6 +129,10 @@ Upgrade configured rc.4 to corrected package
     Should Be True    ${required['policy_consumer_bound']}
     Should Be Equal    ${env_before.strip()}    ${env_after.strip()}
     Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
+    ${rc} =    Execute Command    runagent -m ${APP} grep -Fx 'SSO_AUTH_ONLY_NOT_SESSION=true' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${value} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app printenv SSO_AUTH_ONLY_NOT_SESSION
+    Should Be Equal    ${value.strip()}    true
     # The update lets the cluster manager on the node embed the admin page.
     ${rc} =    Execute Command    runagent -m ${APP} grep -Eq '^ALLOWED_IFRAME_ANCESTORS=https://[^ ]+' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
@@ -141,6 +151,8 @@ Fresh installation of corrected package
     Run task    module/${fresh}/configure-module    {"host":"${host}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
     ${rc} =    Execute Command    runagent -m ${fresh} systemctl --user is-active --quiet vaultwarden.service    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+    ${value} =    Execute Command    runagent -m ${fresh} podman exec vaultwarden-app printenv SSO_AUTH_ONLY_NOT_SESSION
+    Should Be Equal    ${value.strip()}    true
     ${rc} =    Execute Command    runagent -m ${fresh} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    remove-module --no-preserve ${fresh}    return_rc=True    return_stdout=False

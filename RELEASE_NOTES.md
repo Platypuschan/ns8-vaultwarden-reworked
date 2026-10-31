@@ -1,7 +1,10 @@
-Siebte Vorabversion von Vaultwarden Reworked für NethServer 8. Oberflächenkorrektur, benötigt weiterhin IdP 0.1.0-rc.4.
+Achte Vorabversion von Vaultwarden Reworked für NethServer 8. Behebt wiederholte SSO-Anmeldungen beim Öffnen bereits angemeldeter Apps. Benötigt weiterhin IdP 0.1.0-rc.4; kein IdP-Update gegenüber rc.7 erforderlich.
 
-- Die Adminoberfläche füllt die ganze Anwendungsfläche im Cluster-Manager. Überschrift, Statuszeile und die Schaltfläche **In neuem Tab öffnen** entfallen, sobald die Seite eingebettet ist. Warnungen (gestörter Zugriffswiderruf, nicht verlängerbare Adminsitzung) erscheinen als NethServer-Benachrichtigung.
-- Die Schaltfläche **In neuem Tab öffnen** gibt es nur noch, wenn der Cluster-Manager die Seite nicht einbetten darf. Liegen Cluster-Manager und Vaultwarden auf zwei verschiedenen Websites, funktioniert die eingebettete Adminseite nicht; dafür gibt es keinen Ersatz mehr.
-- Keine Meldung „Fertig“ mehr alle zwei Minuten: Die regelmäßige Prüfung der IdP-Gruppenregel durch den Widerruf-Timer läuft ohne Benachrichtigung. Fehlgeschlagene Prüfungen meldet NS8 weiterhin.
+- Bereits angemeldete Geräte behalten ihre Vaultwarden-Sitzung unabhängig vom Ende der IdP-Sitzung. Der Tresor kann mit Masterpasswort oder Biometrie entsperrt werden, ohne erneut den Browser-SSO-Ablauf zu durchlaufen.
+- Neue Geräte und eine ausdrücklich abgemeldete App verlangen weiterhin SSO. Unter Android muss die Tresor-Timeout-Aktion **Sperren** sein. **Abmelden** beendet die Anmeldung absichtlich.
+- Das Modul setzt `SSO_AUTH_ONLY_NOT_SESSION=true` bei Installation, Konfiguration und Update automatisch. Bereits abgelaufene oder gelöschte Geräteanmeldungen benötigen nach dem Update einmalig erneut SSO.
+- AD-Gruppenentzug meldet bestehende Geräte weiterhin über den zweiminütigen Widerrufsdienst ab. Dieser Dienst ist jetzt für bestehende Gerätesitzungen maßgeblich: Bei ausgefallenem Dienst oder fehlgeschlagenen LDAP-/IdP-Abfragen ist kein zeitlich begrenzter Widerruf zugesichert. Warnungen zum Widerrufsstatus beachten.
 
-Keine Stable- oder Katalogfreigabe; Vorabversion für Testinstallationen. Sonst unverändert gegenüber 0.1.0-rc.6.
+Für den Android-Test: nötigenfalls einmal SSO durchführen, Masterpasswort/Biometrie einrichten, Timeout-Aktion **Sperren** wählen, App sperren und später erneut öffnen. Es sollte nur das lokale Entsperren nötig sein. Die tatsächliche Android-/Biometrie-Oberfläche wurde noch nicht live geprüft.
+
+Keine Stable- oder Katalogfreigabe; Vorabversion für Testinstallationen.
