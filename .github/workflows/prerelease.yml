@@ -103,18 +103,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [debian13, rocky9]
+        include:
+          - distro: debian13
+            bootstrap: false
+          - distro: rocky9
+            bootstrap: true
     permissions:
       contents: read
       statuses: write
     uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
     with:
       distro: ${{ matrix.distro }}
-      image_url: ${{ needs.build.outputs.image }}
+      # Rocky's NethServer package mirror is incomplete. Bootstrap only the
+      # disposable CI guest with signed official Rocky packages (see script).
+      image_url: ${{ !matrix.bootstrap && needs.build.outputs.image || '' }}
+      setup_cluster: ${{ !matrix.bootstrap }}
+      coremodules: ${{ matrix.bootstrap && format('ghcr.io/nethserver/core:3.23.2 {0}', needs.build.outputs.image) || '' }}
+      args: ${{ matrix.bootstrap && needs.build.outputs.image || '' }}
       repo_ref: ${{ github.sha }}
       version_tag: ${{ needs.build.outputs.candidate }}
       install_args: ghcr.io/nethserver/core:3.23.2
-      script: test-module-install.sh
+      script: ${{ matrix.bootstrap && 'tests/ns8/bootstrap-rocky.sh' || 'test-module-install.sh' }}
   publish:
     if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
     needs: [build, protocol, admin-browser, qemu]

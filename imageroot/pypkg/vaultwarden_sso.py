@@ -48,9 +48,9 @@ def prepare(config):
         'domain': config['domain'],
         'redirect_uris': ['https://' + config['host'] + '/identity/connect/oidc-signin'],
         'post_logout_redirect_uris': ['https://' + config['host'] + '/'],
-        # Vaultwarden takes the session expiry from the IdP access token;
-        # Bitwarden clients refresh 5 minutes before expiry, so a shorter
-        # lifespan than 10 minutes makes them refresh on every request
+        # Keep the existing client token policy. Enrolled device sessions
+        # are independent of IdP session expiry (auth-only mode); access
+        # removal is enforced by the AD revocation timer.
         'access_token_lifespan': 600,
         'access_required': True,
         'expected_access_group': config['required_group'],

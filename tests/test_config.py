@@ -51,7 +51,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(parsed['SIGNUPS_ALLOWED'],'false')
         self.assertEqual(parsed['SSO_SIGNUPS_MATCH_EMAIL'],'false')
         self.assertEqual(parsed['SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION'],'false')
-        self.assertEqual(parsed['SSO_AUTH_ONLY_NOT_SESSION'],'false')
+        self.assertEqual(parsed['SSO_AUTH_ONLY_NOT_SESSION'],'true')
         self.assertEqual(parsed['SSO_CLIENT_SECRET'],'test-only-secret')
         self.assertEqual(parsed['ADMIN_TOKEN'],self.token)
         self.assertEqual(parsed['NS8_MANAGED_CONFIG'],'true')

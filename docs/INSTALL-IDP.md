@@ -254,7 +254,7 @@ SSO_ENABLED=true
 SSO_ONLY=true
 SSO_SCOPES=profile email
 SSO_PKCE=true
-SSO_AUTH_ONLY_NOT_SESSION=false
+SSO_AUTH_ONLY_NOT_SESSION=true
 SIGNUPS_ALLOWED=false
 SSO_SIGNUPS_ALLOWED=true
 SSO_SIGNUPS_MATCH_EMAIL=false
@@ -276,14 +276,20 @@ Für diesen Client eine Access-Token-Laufzeit von mindestens 10 Minuten
 verwenden (Vaultwarden-Upstream-Empfehlung für Keycloak). Das Vaultwarden-Modul
 fordert bei der Registrierung über den optionalen `register-client`-Parameter
 `access_token_lifespan` 600 Sekunden an; andere Clients behalten den
-Realm-Standard. Die SSO-/Client-Sitzungslaufzeiten des Realms bestimmen die
-reguläre erneute Anmeldung.
+Realm-Standard. Eine bereits angemeldete App verwendet anschließend eine eigene Vaultwarden-
+Gerätesitzung. Das Ende der IdP-Sitzung verlangt keine erneute SSO-Anmeldung.
+In Android als Tresor-Timeout-Aktion **Sperren** wählen, damit Masterpasswort
+oder Biometrie den Tresor entsperren. **Abmelden** beendet dagegen die
+Geräteanmeldung und verlangt beim nächsten Mal wieder SSO. Bereits abgelaufene
+oder gelöschte Geräteanmeldungen benötigen einmalig erneut SSO nach dem Update.
+Der Updatepfad schreibt den verwalteten Wert über `77access-policy`/`prepare`
+in die bestehende `vaultwarden.env` und startet den Dienst neu.
 
 ### Widerruf bestehender Sitzungen
 
 Der IdP verweigert Nichtmitgliedern sofort neue Anmeldungen und
-Token-Erneuerungen; eine bereits laufende Vaultwarden-Sitzung würde ohne
-weiteres Zutun bis zum Ablauf des IdP-Tokens (600 Sekunden) bestehen. Der
+IdP-Token-Erneuerungen. Bereits angemeldete Geräte verwenden eigene
+Vaultwarden-Sitzungen, deren Erneuerung keinen IdP-Aufruf benötigt. Der
 Benutzer-Timer `vaultwarden-revoke.timer` des Moduls gleicht deshalb alle zwei
 Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
 
@@ -295,6 +301,9 @@ Minuten die Vaultwarden-Konten mit der AD-Gruppe ab:
   manuell geprüft werden; der neue Worker hebt sie nicht eigenständig auf.
 - Bei einer definitiv fehlenden oder abweichenden IdP-Pflichtpolicy beendet der
   Timer alle Sitzungen. LDAP-/Transportfehler werden im Status ausgewiesen.
+  Bei ausgefallenem Prüfdienst oder fehlgeschlagenen Abfragen bleiben bestehende
+  Gerätesitzungen erhalten; dann ist kein zeitlich begrenzter Gruppenwiderruf
+  zugesichert. Den Widerrufsstatus deshalb überwachen.
 
 Der interne `ADMIN_TOKEN` bleibt ausschließlich im Modul. Der Browser meldet
 sich über seine NS8-Sitzung an; jede geschützte Anfrage prüft aktuelle

@@ -34,6 +34,7 @@ import idpaccess
 import idprealm
 sys.path.insert(0, str(ROOT / 'imageroot/pypkg'))
 import vaultwarden_revoke
+import vaultwarden_config
 
 
 class Form(HTMLParser):
@@ -196,10 +197,16 @@ class LoginTests(unittest.TestCase):
         idprealm.ensure_client(cls.kc, 'ad.test', 'other1', redirect_uris=redirect)
         cls.policy = idpaccess.set_policy(cls.kc, 'ad.test', cls.kc.find_client('ad.test','vaultwarden1'),
             'services_vaultwarden')
+        # Read the managed session policy rather than relying on the runtime default.
+        managed = dict(line.split('=', 1) for line in vaultwarden_config.environment(
+            {'host':'vault.example.test', 'domain':'ad.test'},
+            {'issuer':'https://sso.example.test/realms/ad.test', 'client_id':'vaultwarden1',
+             'client_secret':cls.secret}, cls.admin_token).splitlines())
         env = dict(os.environ, DOMAIN=cls.vw_url, SSO_ENABLED='true', SSO_ONLY='true', NS8_MANAGED_CONFIG='true',
             SSO_AUTHORITY=cls.url+'/realms/ad.test', SSO_CLIENT_ID='vaultwarden1',
             SSO_CLIENT_SECRET=cls.secret, SSO_SCOPES='profile email', SSO_PKCE='true',
             SIGNUPS_ALLOWED='false', SSO_SIGNUPS_ALLOWED='true', SSO_SIGNUPS_MATCH_EMAIL='false',
+            SSO_AUTH_ONLY_NOT_SESSION=managed['SSO_AUTH_ONLY_NOT_SESSION'],
             SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION='false', ROCKET_PORT='80', ADMIN_TOKEN=cls.admin_token)
         # OIDC discovery/token calls from the container must reach the exact
         # loopback issuer. Sharing the host network is confined to this test.
@@ -207,7 +214,7 @@ class LoginTests(unittest.TestCase):
         env['ROCKET_PORT']=str(cls.vw_port)
         env['ROCKET_ADDRESS']='127.0.0.1'
         for key in ('NS8_MANAGED_CONFIG','DOMAIN','SSO_ENABLED','SSO_ONLY','SSO_AUTHORITY','SSO_CLIENT_ID','SSO_CLIENT_SECRET',
-                'SSO_SCOPES','SSO_PKCE','SIGNUPS_ALLOWED','SSO_SIGNUPS_ALLOWED','SSO_SIGNUPS_MATCH_EMAIL',
+                'SSO_SCOPES','SSO_PKCE','SSO_AUTH_ONLY_NOT_SESSION','SIGNUPS_ALLOWED','SSO_SIGNUPS_ALLOWED','SSO_SIGNUPS_MATCH_EMAIL',
                 'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION','ROCKET_PORT','ROCKET_ADDRESS','ADMIN_TOKEN'):
             args += ['--env',key]
         args += ['--volume',f'vw-data-{cls.suffix}:/data',os.environ.get('VW_RUNTIME_IMAGE','localhost/vaultwarden-sso-only')]
@@ -544,6 +551,25 @@ class LoginTests(unittest.TestCase):
     def refresh(self, refresh_token):
         return requests.post(self.vw_url+'/identity/connect/token',data={
             'grant_type':'refresh_token','client_id':'mobile','refresh_token':refresh_token},timeout=20)
+
+    def test_18_device_session_survives_idp_logout(self):
+        """An enrolled mobile device refreshes without a browser after the
+        IdP session is gone. A genuinely new device still needs SSO."""
+        session = self.mobile_login('allowed')
+        self.assertEqual(session.status_code, 200, session.text[:300])
+        user = next(u for u in self.kc.get('/ad.test/users', params={'username':'allowed'})
+                    if u['username'] == 'allowed')
+        self.assertTrue(self.kc.get('/ad.test/users/' + user['id'] + '/sessions'))
+        self.kc.post('/ad.test/users/' + user['id'] + '/logout')
+        self.assertFalse(self.kc.get('/ad.test/users/' + user['id'] + '/sessions'))
+        refreshed = self.refresh(session.json()['refresh_token'])
+        self.assertEqual(refreshed.status_code, 200, refreshed.text[:300])
+        # Repeated use and a server restart must retain the enrolled device.
+        cmd('podman', 'restart', self.vaultwarden)
+        wait_http(self.vw_url + '/alive', self.names)
+        refreshed = self.refresh(refreshed.json()['refresh_token'])
+        self.assertEqual(refreshed.status_code, 200, refreshed.text[:300])
+        self.assertFalse(self.kc.get('/ad.test/users/' + user['id'] + '/sessions'))
 
     def test_19_admin_settings_persist_without_overriding_ns8_policy(self):
         state_dir=tempfile.mkdtemp()
