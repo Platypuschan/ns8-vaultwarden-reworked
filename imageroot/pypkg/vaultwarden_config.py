@@ -56,7 +56,9 @@ def environment(config, registration, admin_token, ancestors=''):
         'SSO_AUTHORITY': issuer, 'SSO_CLIENT_ID': registration['client_id'],
         'SSO_CLIENT_SECRET': registration['client_secret'],
         'SSO_SCOPES': 'profile email', 'SSO_PKCE': 'true',
-        'SSO_AUTH_ONLY_NOT_SESSION': 'false', 'SIGNUPS_ALLOWED': 'false',
+        # Keep enrolled devices usable after the browser/IdP session ends.
+        # AD access removal is enforced by vaultwarden-revoke.timer.
+        'SSO_AUTH_ONLY_NOT_SESSION': 'true', 'SIGNUPS_ALLOWED': 'false',
         'SSO_SIGNUPS_ALLOWED': 'true', 'SSO_SIGNUPS_MATCH_EMAIL': 'false',
         'SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION': 'false', 'INVITATIONS_ALLOWED': 'false',
         'EMAIL_CHANGE_ALLOWED': 'false', 'PUSH_ENABLED': 'false',

@@ -55,6 +55,7 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(tasks.run.call_args.kwargs['action'],'register-client')
         self.assertEqual(tasks.run.call_args.kwargs['data']['access_token_lifespan'],600)
         self.assertEqual(tasks.run.call_args.kwargs['data']['expected_access_group'],'services_vaultwarden')
+        self.assertEqual(self.env['SSO_AUTH_ONLY_NOT_SESSION'], 'true')
         self.assertEqual(self.env['ALLOWED_IFRAME_ANCESTORS'],'https://node1.example.test https://node2.example.test')
 
     def test_new_binding_is_established_before_registration(self):
