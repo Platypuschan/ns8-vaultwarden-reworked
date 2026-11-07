@@ -37,7 +37,21 @@ class RuntimeGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             os.chmod(directory, 0o755)
             result = self.run_guard(IMAGE, ['-v', f'{directory}:/opt/keycloak/providers:ro'])
+        self.assert_provider_denial(result, 'ns8-authenticators')
+
+    def assert_provider_denial(self, result, provider):
         self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stderr.strip(), f'NS8 provider missing or empty: {provider}.jar')
+
+    def test_broken_guard_input_is_not_a_provider_denial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            os.chmod(directory, 0o755)
+            result = self.run_guard(IMAGE, [
+                '-v', f'{directory}:/opt/keycloak/conf/ns8-keycloak-version:ro',
+            ])
+        self.assertNotEqual(result.returncode, 0)
+        with self.assertRaises(AssertionError):
+            self.assert_provider_denial(result, 'ns8-authenticators')
 
 
 if __name__ == '__main__':

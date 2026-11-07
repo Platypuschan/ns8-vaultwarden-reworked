@@ -40,8 +40,13 @@ runtime; changing this recipe does **not** republish or retarget that module.
 `.github/workflows/ns8-prototype.yml` is a disabled notice-only workflow.
 Current `prerelease.yml`, protocol tests and NS8 tests obtain the independent
 IdP through `IDP_REF`/`IDP_IMAGE`/`IDP_SOURCE_ROOT`/`IDP_RUNTIME_IMAGE`. They do
-not exercise this recipe. No production cache, module default or independent
-IdP source is changed by this historical fix.
+not exercise this recipe. The separate `historical-idp.yml` workflow now
+builds this exact recipe and Samba fixture and runs all image guards plus the
+historical 16-case behavior suite for path-filtered pushes/PRs (including
+runtime-cache/recipe and fixture dependencies), or manual dispatch. It has
+only top-level `contents: read`, full-history checkout, no persisted checkout
+credentials, registry login, package writes or publication. No production
+cache, module default or independent IdP source is changed by this fix.
 
 ## Reproduce
 
@@ -69,14 +74,58 @@ VW_RUNTIME_IMAGE=localhost/your-tested-vaultwarden-runtime \
   python tests/historical_idp/run.py
 ```
 
+The runner verifies the **complete** upstream `imageroot/pypkg` inventory
+(`idpfed.py`, `idprealm.py`, `kcadmin.py`) against hashes derived from that
+SHA256-verified archive **before** executing/importing the fixture. Missing,
+modified or extra entries, symlinks, bytecode and native import shadows fail
+closed. Use a freshly extracted source tree; bytecode is disabled during the
+run. The overlay's `idprealm.py` and the fixture's NS8 import stubs remain the
+original declared seams, not replacements for upstream provenance.
+
 The runner loads the last historical 16-case fixture directly from immutable
 Git object `4862c791adf50fae5f3cd7ed6dc371272147e368`, substituting only source
-paths and the isolated image name. Original assertions are unchanged. It
-uses actual Samba/LDAP, Keycloak and Vaultwarden; NS8 agent library imports
-are stubbed exactly as in the original protocol fixture. This is not an NS8
-agent/QEMU lifecycle or production deployment test.
+paths and isolated IdP/Samba image names. Original behavioral assertions are
+unchanged. The harness requires exactly 16 executed successes without skips,
+registers owned resources before launch, attempts cleanup and verifies their
+absence, and does not save container logs. Failures report exception classes
+without secret-bearing exception text. It uses actual Samba/LDAP, Keycloak
+and Vaultwarden; NS8 agent library imports are stubbed exactly as in the
+original protocol fixture. This is not an NS8 agent/QEMU lifecycle or
+production deployment test.
 
-## Executed acceptance (2026-11-07)
+For the complete CI-equivalent run (Podman, curl and requests installed):
+
+```sh
+bash tests/historical_idp/ci.sh
+```
+
+This downloads and checksum-verifies the pinned archive, verifies the current
+Vaultwarden recipe equals `runtime-cache.json`, requires its immutable digest
+pin, pulls it anonymously and executes its version command. It never writes
+the runtime cache or rebuilds Vaultwarden. Unique local image tags and scratch
+source are removed on exit; registry access is pull-only.
+
+## Review hardening acceptance (2026-11-07)
+
+- RED/GREEN: missing historical CI regression; provider-negative assertion
+  initially failed on the old guard's empty diagnostic; poisoned upstream
+  `idpfed.py` initially executed before the new integrity check. An additional
+  RED/GREEN regression caught a native import-shadow entry. Broken version
+  input cannot satisfy the exact missing-provider denial assertion.
+- Updated guard rebuilt/augmented in the actual image; Maven provider layers
+  reused. Result image ID
+  `41295558ae45113a9b721f5121fd84ce8e83630754bf6f60949fae5530fac3f7`.
+- Full local CI-equivalent script: PASS, **4/4** actual image checks (three
+  original guards plus broken-input negative control), **16/16** historical
+  behavioral tests in 84.434s, cleanup confirmed. It used the checkout's
+  verified published Vaultwarden cache pin
+  `sha256:0d0332fa274b3d12f30c82611735a72cd2bb30a17c9bc1dd0b90d96d3cafadf0`;
+  executed Vaultwarden1.37.5-group-prototype / Web-Vault2026.10.1.
+- Full unit suite with pristine1.37.5 source: **47/47 PASS**, zero skips.
+  Syntax/diff checks and actionlint1.7.12 for the new workflow: PASS.
+  Hosted GitHub execution is not claimed by this local verification.
+
+## Original executed acceptance (2026-11-07)
 
 - RED: new recipe alignment regression failed against exact PR27 on main95249de.
 - GREEN: source regression, full unit discovery (43 run: 42 pass, one unrelated

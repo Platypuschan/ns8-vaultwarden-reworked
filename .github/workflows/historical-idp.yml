@@ -1,0 +1,39 @@
+name: Historical IdP acceptance
+on:
+  pull_request:
+    paths:
+      - 'prototype/idp/**'
+      - 'tests/historical_idp/**'
+      - 'tests/test_historical_idp.py'
+      - 'tests/integration/**'
+      - 'prototype/vaultwarden/**'
+      - 'runtime-cache.json'
+      - '.github/scripts/runtime-tag'
+      - '.github/workflows/historical-idp.yml'
+  push:
+    paths:
+      - 'prototype/idp/**'
+      - 'tests/historical_idp/**'
+      - 'tests/test_historical_idp.py'
+      - 'tests/integration/**'
+      - 'prototype/vaultwarden/**'
+      - 'runtime-cache.json'
+      - '.github/scripts/runtime-tag'
+      - '.github/workflows/historical-idp.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  historical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y podman curl jq
+      - run: python3 -m pip install requests
+      - run: python3 -m unittest discover -s tests -p test_historical_idp.py -v
+      - name: Build exact historical recipe and run image and 16 behavior checks
+        run: bash tests/historical_idp/ci.sh
