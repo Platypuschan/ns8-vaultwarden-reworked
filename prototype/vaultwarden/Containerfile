@@ -8,7 +8,7 @@ RUN git apply --check /tmp/deny-api-key.patch && git apply /tmp/deny-api-key.pat
 COPY ns8_admin.rs /src/src/api/ns8_admin.rs
 ENV CARGO_BUILD_JOBS=2 CARGO_PROFILE_RELEASE_LOW_LTO=false VW_VERSION=1.37.4-group-prototype
 RUN cargo build --locked --profile release-low --features sqlite
-FROM docker.io/vaultwarden/server@sha256:2bb2e0344616c62a6d76ea10558497499f8ed3f731400e143dc7bf17b757b5b9
+FROM docker.io/vaultwarden/server@sha256:f8863ab2519364bfc657144006682a830784e0bb501606d5e34516ee76b60b5c
 COPY --from=build /src/target/release-low/vaultwarden /vaultwarden
 LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden-reworked" \
       org.opencontainers.image.version="1.37.4-group-prototype" \
