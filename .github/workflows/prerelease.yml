@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -57,7 +57,7 @@ jobs:
           printf 'image=%s/vaultwarden-reworked:%s\nruntime=%s/vaultwarden-reworked-server\ncandidate=%s\nversion=%s\n' "$base" "$tag" "$base" "$tag" "$version" >> "$GITHUB_OUTPUT"
   protocol:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
           IDP_SOURCE_ROOT="$PWD/.test-idp" IDP_RUNTIME_IMAGE="$runtime" VW_RUNTIME_IMAGE="$RUNTIME_REPO:$CANDIDATE" python3 tests/integration/run.py
   admin-browser:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -127,7 +127,7 @@ jobs:
   publish:
     if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
     needs: [build, protocol, admin-browser, qemu]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       packages: write
