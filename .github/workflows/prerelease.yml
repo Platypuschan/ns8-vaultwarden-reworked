@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -24,7 +24,7 @@ jobs:
       candidate: ${{ steps.images.outputs.candidate }}
       version: ${{ steps.images.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: pip install requests jsonschema
       - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - run: python3 tests/check_syntax.py
@@ -57,13 +57,13 @@ jobs:
           printf 'image=%s/vaultwarden-reworked:%s\nruntime=%s/vaultwarden-reworked-server\ncandidate=%s\nversion=%s\n' "$base" "$tag" "$base" "$tag" "$version" >> "$GITHUB_OUTPUT"
   protocol:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: refs
         run: echo "idp=$(cat IDP_REF)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Platypuschan/ns8-idp-reworked
           ref: ${{ steps.refs.outputs.idp }}
@@ -83,10 +83,10 @@ jobs:
           IDP_SOURCE_ROOT="$PWD/.test-idp" IDP_RUNTIME_IMAGE="$runtime" VW_RUNTIME_IMAGE="$RUNTIME_REPO:$CANDIDATE" python3 tests/integration/run.py
   admin-browser:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y podman
       - run: pip install requests
       - run: npm install --prefix /tmp/vw-admin-browser --no-audit --no-fund playwright@1.64.1
@@ -127,12 +127,12 @@ jobs:
   publish:
     if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
     needs: [build, protocol, admin-browser, qemu]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y skopeo
       - name: Promote tested digests and create the prerelease
         env:
