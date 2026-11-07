@@ -22,6 +22,48 @@ class RuntimeGuardTests(unittest.TestCase):
         result = self.run_guard(IMAGE)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_rest4_compilation_links_to_actual_shipped_api(self):
+        result = self.run_guard(IMAGE)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('REST linkage OK:', result.stdout)
+        self.assertIn('jakarta.ws.rs-api-3.1.0.jar', result.stdout)
+
+    def test_unavailable_rest_class_field_and_method_are_rejected(self):
+        # Compile isolated consumers against deliberately newer fake API symbols.
+        # Only the consumer enters the provider JAR; the real runtime API must
+        # resolve its references, never the stubs or the Maven compile classpath.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o755)
+            api = root / 'jakarta/ws/rs/core'
+            api.mkdir(parents=True)
+            (api / 'FutureApi.java').write_text('package jakarta.ws.rs.core; public class FutureApi {}')
+            (api / 'Response.java').write_text('''package jakarta.ws.rs.core;
+public class Response { public static int futureField; public static void futureMethod() {} }''')
+            cases = {
+                'MissingClass': ('jakarta.ws.rs.core.FutureApi value;', 'ClassNotFoundException'),
+                'MissingField': ('int value() { return jakarta.ws.rs.core.Response.futureField; }', 'NoSuchFieldException'),
+                'MissingMethod': ('void value() { jakarta.ws.rs.core.Response.futureMethod(); }', 'NoSuchMethodException'),
+            }
+            for name, (body, _) in cases.items():
+                (root / f'{name}.java').write_text(f'public class {name} {{ {body} }}')
+            compile_result = subprocess.run([
+                'podman', 'run', '--rm', '--network=none', '-v', f'{root}:/work:rw',
+                '-w', '/work', '--entrypoint', '/bin/bash',
+                'docker.io/library/maven:3.10-eclipse-temurin-21', '-ec',
+                'javac jakarta/ws/rs/core/*.java Missing*.java; '
+                'for name in MissingClass MissingField MissingMethod; do '
+                'jar --create --file "$name.jar" "$name.class"; done',
+            ], capture_output=True, text=True)
+            self.assertEqual(compile_result.returncode, 0, compile_result.stderr)
+            for name, (_, diagnostic) in cases.items():
+                with self.subTest(symbol=name):
+                    result = self.run_guard(IMAGE, [
+                        '-v', f'{root / (name + ".jar")}:/opt/keycloak/providers/ns8-client-access.jar:ro',
+                    ])
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stderr.strip(), f'REST linkage mismatch: {diagnostic}')
+
     def test_original_pr27_runtime_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             version = Path(directory) / 'version'

@@ -3,6 +3,8 @@ FROM docker.io/library/maven:3.10-eclipse-temurin-21 AS provider
 WORKDIR /src
 COPY pom.xml .
 COPY src src
+COPY RestLinkageCheck.java .
+RUN mkdir /rest-linkage && javac -d /rest-linkage RestLinkageCheck.java
 # Rebuild the original NS8 providers too: never replace the NS8 base with
 # vanilla Keycloak without its authenticators, script mappers and healthcheck.
 ADD https://api.github.com/repos/NethServer/ns8-idp/tarball/433fa069c2eab4c073303769ac84c40b37a2676b /src/upstream.tar.gz
@@ -17,6 +19,7 @@ RUN printf '%s  %s\n' afc529321020a4f20eb44f5552738e1cf3ca68416d10ad70c168867780
     && jar --create --file /providers/ns8-mappers.jar -C upstream/keycloak-providers/ns8-mappers .
 FROM quay.io/keycloak/keycloak:26.8.2@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b
 COPY --from=provider /providers/ /opt/keycloak/providers/
+COPY --from=provider /rest-linkage/ /opt/keycloak/bin/ns8-rest-linkage/
 COPY --from=provider /src/keycloak-version /opt/keycloak/conf/ns8-keycloak-version
 COPY --from=provider --chmod=0755 /src/upstream/keycloak-providers/ns8-healthcheck /opt/keycloak/bin/ns8-healthcheck
 COPY --chmod=0755 verify-runtime.sh /opt/keycloak/bin/ns8-verify-runtime
