@@ -1,0 +1,172 @@
+"""Keep the manually built historical overlay coherent, not the independent IdP."""
+from pathlib import Path
+import re
+import ast
+import io
+import importlib.util
+import hashlib
+from unittest.mock import patch
+from typing import Any
+import os
+import subprocess
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+
+ROOT = Path(__file__).resolve().parents[1]
+IDP = ROOT / 'prototype/idp'
+
+
+class HistoricalIdpRecipeTests(unittest.TestCase):
+    def test_token_lifespan_uses_issued_claims_not_remaining_seconds(self):
+        import base64
+        import json
+        source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
+        definitions: list[ast.stmt] = [node for node in source.body if isinstance(node, ast.FunctionDef)]
+        namespace: dict[str, Any] = dict(base64=base64, json=json)
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), '<harness helpers>', 'exec'), namespace)
+        self.assertIn('assert_token_lifespan', namespace)
+        claims = base64.urlsafe_b64encode(json.dumps({'iat': 1000, 'exp': 1600}).encode()).decode().rstrip('=')
+        token = {'access_token': 'header.' + claims + '.signature', 'expires_in': 599}
+        namespace['assert_token_lifespan'](self, token, 600)
+        for issued, remaining in ((599, 599), (601, 600), (600, 594), (600, 601)):
+            with self.subTest(issued=issued, remaining=remaining):
+                claims = base64.urlsafe_b64encode(json.dumps(
+                    {'iat': 1000, 'exp': 1000 + issued}).encode()).decode().rstrip('=')
+                invalid = {'access_token': 'header.' + claims + '.signature', 'expires_in': remaining}
+                with self.assertRaises(AssertionError):
+                    namespace['assert_token_lifespan'](self, invalid, 600)
+
+    def test_private_diagnostics_keep_fixture_line_without_exception_values(self):
+        source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
+        result_class = next(node for node in source.body
+                            if isinstance(node, ast.ClassDef) and node.name == 'PrivateResult')
+        fixture = '4862c791adf50fae5f3cd7ed6dc371272147e368:tests/integration/run.py'
+        namespace: dict[str, Any] = dict(unittest=unittest, FIXTURE=fixture)
+        exec(compile(ast.Module(body=[result_class], type_ignores=[]), '<private result>', 'exec'), namespace)
+        exec(compile("def runTest(self):\n    raise AssertionError('PRIVATE_CREDENTIAL')\n", fixture, 'exec'), namespace)
+        case = type('FixtureCase', (unittest.TestCase,), {'runTest': namespace['runTest']})
+        output = io.StringIO()
+        result = unittest.TextTestRunner(stream=output, resultclass=namespace['PrivateResult']).run(case())
+        self.assertFalse(result.wasSuccessful())
+        self.assertIn('AssertionError fixture-lines=2', output.getvalue())
+        self.assertNotIn('PRIVATE_CREDENTIAL', output.getvalue())
+
+    def test_cleanup_registers_failed_launch_and_attempts_all_owned_resources(self):
+        # Execute the real harness helpers; only the Podman process boundary is stubbed.
+        source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
+        definitions: list[ast.stmt] = [node for node in source.body
+                       if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            if args[:2] == ('podman', 'run'):
+                raise RuntimeError('private launch detail')
+            return subprocess.CompletedProcess(args, 1 if 'exists' in args else 0)
+        owned = {'container': set(), 'volume': set(), 'network': {'owned-network'}}
+        namespace: dict[str, Any] = dict(original_cmd=command, owned=owned, unittest=unittest,
+                                         FIXTURE='immutable fixture')
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), '<harness helpers>', 'exec'), namespace)
+        with self.assertRaises(RuntimeError):
+            namespace['tracked_cmd']('podman', 'run', '--name', 'owned-container',
+                                     '--volume', 'owned-volume:/data', 'unused')
+        self.assertEqual(owned['container'], {'owned-container'})
+        self.assertEqual(owned['volume'], {'owned-volume'})
+        namespace['cleanup']()
+        for kind, name in (('container', 'owned-container'), ('volume', 'owned-volume'),
+                           ('network', 'owned-network')):
+            self.assertIn(('podman', kind, 'exists', name), calls)
+        class FailingCase(unittest.TestCase):
+            def runTest(self):
+                raise RuntimeError('PRIVATE_CREDENTIAL')
+        output = io.StringIO()
+        result = unittest.TextTestRunner(stream=output, resultclass=namespace['PrivateResult']).run(FailingCase())
+        self.assertFalse(result.wasSuccessful())
+        self.assertIn('RuntimeError', output.getvalue())
+        self.assertNotIn('PRIVATE_CREDENTIAL', output.getvalue())
+
+    def test_complete_python_inventory_rejects_modifications_and_import_shadows(self):
+        spec = importlib.util.spec_from_file_location(
+            'historical_provenance', ROOT / 'tests/historical_idp/provenance.py')
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        # Deliberate inventory seam: test hashing/allowlisting on real files,
+        # not claim these tiny fixtures are the pinned upstream source.
+        expected = {name: hashlib.sha256(name.encode()).hexdigest()
+                    for name in module.PYTHON_SHA256}
+        with tempfile.TemporaryDirectory() as directory, patch.object(module, 'PYTHON_SHA256', expected):
+            package = Path(directory) / 'imageroot/pypkg'
+            package.mkdir(parents=True)
+            for name in expected:
+                (package / name).write_text(name)
+            self.assertEqual(module.verify_python(directory), package)
+            for name in expected:
+                with self.subTest(changed=name):
+                    (package / name).write_text('changed')
+                    with self.assertRaisesRegex(SystemExit, 'integrity mismatch'):
+                        module.verify_python(directory)
+                    (package / name).write_text(name)
+            for extra in ('extra.py', 'idpfed.so', 'idpfed.pyc'):
+                with self.subTest(extra=extra):
+                    (package / extra).touch()
+                    with self.assertRaisesRegex(SystemExit, 'integrity mismatch'):
+                        module.verify_python(directory)
+                    (package / extra).unlink()
+            (package / 'kcadmin.py').unlink()
+            with self.assertRaisesRegex(SystemExit, 'integrity mismatch'):
+                module.verify_python(directory)
+
+    def test_unverified_upstream_is_rejected_before_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / 'imageroot/pypkg'
+            package.mkdir(parents=True)
+            (package / 'idpfed.py').write_text("raise SystemExit('UNVERIFIED_IMPORT_EXECUTED')")
+            # Model a shallow checkout without fetching or modifying Git history.
+            # Poisoned source must be rejected before any fixture-history lookup.
+            tools = Path(directory) / 'tools'
+            tools.mkdir()
+            git = tools / 'git'
+            git.write_text('#!/bin/sh\nprintf "UNEXPECTED_HISTORY_LOOKUP\\n" >&2\nexit 97\n')
+            git.chmod(0o755)
+            env = dict(os.environ, IDP_UPSTREAM_SOURCE_ROOT=directory,
+                       HISTORICAL_IDP_RUNTIME_IMAGE='unused', VW_RUNTIME_IMAGE='unused',
+                       PATH=str(tools) + os.pathsep + os.environ['PATH'])
+            result = subprocess.run(['python3', str(ROOT / 'tests/historical_idp/run.py')],
+                                    env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('historical upstream Python integrity mismatch', result.stderr)
+        self.assertNotIn('UNVERIFIED_IMPORT_EXECUTED', result.stderr)
+        self.assertNotIn('UNEXPECTED_HISTORY_LOOKUP', result.stderr)
+
+    def test_historical_ci_builds_and_runs_read_only_with_full_history(self):
+        path = ROOT / '.github/workflows/historical-idp.yml'
+        self.assertTrue(path.is_file(), 'historical recipe has no automated image/behavior coverage')
+        workflow = path.read_text()
+        for required in ('contents: read', 'fetch-depth: 0', 'persist-credentials: false',
+                         'paths:', 'prototype/idp/**', 'tests/historical_idp/**',
+                         'tests/integration/**', 'runtime-cache.json',
+                         'tests/historical_idp/ci.sh'):
+            self.assertIn(required, workflow)
+        self.assertNotIn('packages: write', workflow)
+        script = (ROOT / 'tests/historical_idp/ci.sh').read_text()
+        for required in ('prototype/idp/Containerfile', 'image_checks.py', 'historical_idp/run.py',
+                         'Samba.Containerfile', '.github/scripts/runtime-tag', 'sha256sum -c',
+                         'podman pull', 'runtime-cache.json'):
+            self.assertIn(required, script)
+        self.assertNotRegex(script, r'podman (push|login)')
+
+    def test_runtime_matches_provided_spi_version(self):
+        pom = ET.parse(IDP / 'pom.xml')
+        version = pom.findtext('{*}properties/{*}keycloak.version')
+        recipe = (IDP / 'Containerfile').read_text()
+        runtime = re.search(r'^FROM quay.io/keycloak/keycloak:([^@]+)@sha256:[0-9a-f]{64}$',
+                            recipe, re.MULTILINE)
+        self.assertIsNotNone(runtime, 'historical SPI update needs a matching immutable runtime')
+        assert runtime is not None
+        self.assertEqual(runtime[1], version)
+        self.assertIn('verify-runtime.sh', recipe, 'build must verify actual runtime, not just its tag')
+
+
+if __name__ == '__main__':
+    unittest.main()
