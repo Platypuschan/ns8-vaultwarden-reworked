@@ -83,9 +83,14 @@ run. The overlay's `idprealm.py` and the fixture's NS8 import stubs remain the
 original declared seams, not replacements for upstream provenance.
 
 The runner loads the last historical 16-case fixture directly from immutable
-Git object `4862c791adf50fae5f3cd7ed6dc371272147e368`, substituting only source
-paths and isolated IdP/Samba image names. Original behavioral assertions are
-unchanged. The harness requires exactly 16 executed successes without skips,
+Git object `4862c791adf50fae5f3cd7ed6dc371272147e368`, substituting source
+paths and isolated IdP/Samba image names. Authentication and revocation assertions
+are retained. One timing assertion is corrected: the issued access-token lifetime
+must be exactly 600 seconds (`exp - iat`), while `expires_in` may be 595–600
+seconds because response construction can cross a wall-clock second. Regression
+tests reject an incorrect issued lifetime and out-of-range remaining TTL. Safe
+failure diagnostics retain immutable fixture line numbers, never token values or
+exception text. The harness requires exactly 16 executed successes without skips,
 registers owned resources before launch, attempts cleanup and verifies their
 absence, and does not save container logs. Failures report exception classes
 without secret-bearing exception text. It uses actual Samba/LDAP, Keycloak
