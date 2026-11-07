@@ -1,5 +1,5 @@
 # Build with the same Keycloak SPI version as the ns8-idp base image.
-FROM docker.io/library/maven:3.9-eclipse-temurin-21 AS provider
+FROM docker.io/library/maven:3.10-eclipse-temurin-21 AS provider
 WORKDIR /src
 COPY pom.xml .
 COPY src src
