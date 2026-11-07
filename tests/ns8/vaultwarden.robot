@@ -188,9 +188,9 @@ Revocation timer and authenticated admin pages
     # The server holds only an Argon2id hash; the clear text is in a private file for the worker
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.argon2id.v=19.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    ${mode} =    Execute Command    runagent -m ${APP} stat -c %a admin-worker.token
+    ${mode} =    Execute Command    timeout 60 runagent -m ${APP} stat -c %a admin-worker.token
     Should Be Equal    ${mode.strip()}    600
-    ${leak} =    Execute Command    runagent -m ${APP} sh -c "grep -c \"$(cat admin-worker.token)\" vaultwarden.env || true"
+    ${leak} =    Execute Command    timeout 60 runagent -m ${APP} sh -c 'grep -c -F -f admin-worker.token vaultwarden.env || true'
     Should Be Equal    ${leak.strip()}    0
     # Anonymous admin navigation is denied; the NS8 UI uses its authenticated POST bridge.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
@@ -199,8 +199,9 @@ Revocation timer and authenticated admin pages
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/alive
     Should Be Equal    ${code}    200
     # The timer service binds to LDAP and logs in to the admin API
-    ${out}    ${err}    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user start vaultwarden-revoke.service    return_rc=True    return_stdout=True    return_stderr=True
-    Should Be Equal As Integers    ${rc}    0    ${err}
+    ${out}    ${err}    ${rc} =    Execute Command    timeout 150 runagent -m ${APP} systemctl --user start vaultwarden-revoke.service    return_rc=True    return_stdout=True    return_stderr=True
+    ${journal} =    Execute Command    timeout 60 runagent -m ${APP} journalctl --user -u vaultwarden-revoke.service -n 30 --no-pager 2>&1
+    Should Be Equal As Integers    ${rc}    0    ${err}\n${journal}
     ${rc} =    Execute Command    runagent -m ${APP} test -s admin-session    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
 
