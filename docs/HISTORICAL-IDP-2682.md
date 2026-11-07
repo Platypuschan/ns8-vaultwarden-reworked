@@ -32,6 +32,37 @@ A new upstream archive checksum, base digest or SPI bump needs review and a
 new image build. Archive regeneration fails closed rather than bypassing
 integrity checking. Maven remains the previously accepted 3.10/Java21 builder.
 
+## Jakarta REST 4 compile API with the shipped REST 3.1 runtime (PR29)
+
+The immutable Keycloak26.8.2 base still ships
+`jakarta.ws.rs.jakarta.ws.rs-api-3.1.0.jar`. PR29 changes only the overlay's
+**provided compile API** to4.0.0; it does not install REST4 in Keycloak.
+No claim of blanket REST4-on-REST3 compatibility is made. The actual compiled
+overlay references only `Response`, `Response.Status` and the enum field
+`Response.Status.FORBIDDEN`, all present with the same descriptors in3.1.
+The Keycloak SPI remains26.8.2; its existing constructor/form calls and the
+security denial paths are exercised by the historical behavioral fixture.
+A coordinated Keycloak/runtime upgrade is unnecessary for this common subset,
+and replacing the runtime's REST JAR alone would risk its RESTEasy integration.
+
+`RestLinkageCheck.java` is compiled separately in the Maven builder and copied
+outside the provider JARs. Before augmentation, `verify-runtime.sh` runs it
+with **only the actual runtime library directory** on its dependency classpath.
+It reads all overlay class constant pools, resolves REST classes (including
+those appearing only in descriptors), and checks public fields, constructors
+and methods, including their exact type/return descriptors. Missing API
+symbols produce the named `REST linkage mismatch` diagnostic; zero discovered
+references also fails closed. This is a scoped symbol-linkage guard, not a
+replacement for the behavioral suite or an API compatibility certification.
+
+Real image regressions retain a successful runtime control and compile three
+isolated consumers against deliberate fake future REST class/field/method
+symbols. Only each consumer is mounted into the runtime, never its fake API;
+all must fail with the corresponding exact linkage diagnostic. Launch/mount
+failures cannot satisfy these negative assertions. No network is used by the
+fixture compiler. The changed recipe/source paths already trigger the
+contents-read-only historical acceptance workflow.
+
 ## Consumers and scope
 
 The direct consumer is the manual historical build in `docs/TESTING.md`.
@@ -109,6 +140,27 @@ Vaultwarden recipe equals `runtime-cache.json`, requires its immutable digest
 pin, pulls it anonymously and executes its version command. It never writes
 the runtime cache or rebuilds Vaultwarden. Unique local image tags and scratch
 source are removed on exit; registry access is pull-only.
+
+## PR29 executed acceptance (2026-11-07)
+
+- RED: the new real-image assertion failed against the previous accepted image
+  because its guard performed no REST linkage check.
+- Exact `prototype/idp/Containerfile` **no-cache** build succeeded, rebuilding
+  both Maven providers, resolving actual runtime REST references and completing
+  Quarkus augmentation. Image `localhost/vw-pr29-rest4:20261107`, ID
+  `ff1ecdc19d9389c7a327eafb417909a806d8f45e5b7641fcffff48e7ba0b782c`.
+  Embedded provider POM independently confirms REST4.0.0/provided, with no
+  bundled Jakarta classes. Runtime remains Keycloak26.8.2/REST3.1.0/Java21.0.13.
+- CI-equivalent script succeeded: **6 image tests PASS**, including three
+  deliberate missing-symbol subcases; **16 historical behaviors PASS**, no
+  skips,86.760s, owned-resource cleanup confirmed. This used the verified
+  current production Vaultwarden cache pin
+  `sha256:3cecf3a6c784bfa2c31f5b7dd762cf6b14b8cde4f6fb532c0445a478f38ac584`;
+  Vaultwarden1.37.5-group-prototype/Web-Vault2026.10.1.
+- Full units with pristine upstream1.37.5: **52PASS,0skip**; without the
+  optional pristine source: **51PASS,1 expected patch-applicability skip**.
+  Historical regression subset: **7PASS**. No hosted CI execution, remote
+  writes, package publication, module lifecycle or user deployment claimed.
 
 ## Review hardening acceptance (2026-11-07)
 

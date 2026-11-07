@@ -17,3 +17,5 @@ for provider in ns8-authenticators ns8-mappers ns8-client-access; do
     }
 done
 test -x /opt/keycloak/bin/ns8-healthcheck
+java -cp '/opt/keycloak/bin/ns8-rest-linkage:/opt/keycloak/lib/lib/main/*' \
+    RestLinkageCheck /opt/keycloak/providers/ns8-client-access.jar
