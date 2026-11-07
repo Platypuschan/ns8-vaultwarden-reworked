@@ -16,6 +16,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'imageroot/pypkg'))
 from vaultwarden_admin import issue_ticket
+import vaultwarden_config as policy
 from vaultwarden_revoke import AdminAPI
 
 # Short sessions keep the expiry tests fast; NS8 installs use 120 s.
@@ -31,6 +32,12 @@ class AdminBridge(unittest.TestCase):
         os.mkdir(os.path.join(cls.directory.name, 'data'))
         cls.worker = secrets.token_urlsafe(48)
         cls.name = 'vw-admin-security-' + secrets.token_hex(4)
+        image = os.environ.get('VW_RUNTIME_IMAGE', 'localhost/vaultwarden-reworked-server:security')
+        # As in production: the server holds only the Argon2 hash (read from
+        # an env file, so `$` stays literal); the worker keeps the clear text.
+        cls.env_file = os.path.join(cls.directory.name, 'vaultwarden.env')
+        with open(cls.env_file, 'w') as f:
+            f.write('ADMIN_TOKEN=' + policy.argon2_hash(cls.worker, image) + '\n')
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
@@ -39,11 +46,11 @@ class AdminBridge(unittest.TestCase):
         subprocess.run(['podman', 'run', '-d', '--name', cls.name, '--network=host',
             '-e', 'ROCKET_ADDRESS=127.0.0.1', '-e', f'ROCKET_PORT={port}',
             '-e', 'NS8_MANAGED_CONFIG=true', '-e', f'NS8_ADMIN_SESSION_SECONDS={SESSION_SECONDS}',
-            '-e', 'ADMIN_RATELIMIT_MAX_BURST=30', '-e', 'ADMIN_TOKEN=' + cls.worker, '-e', 'DOMAIN=' + cls.base,
+            '-e', 'ADMIN_RATELIMIT_MAX_BURST=30', '--env-file', cls.env_file, '-e', 'DOMAIN=' + cls.base,
             '-e', 'ALLOWED_IFRAME_ANCESTORS=' + cls.origin,
             '-v', os.path.join(cls.directory.name, 'data') + ':/data:Z',
             '-v', cls.tickets + ':/ns8-admin-tickets:Z',
-            os.environ.get('VW_RUNTIME_IMAGE', 'localhost/vaultwarden-reworked-server:security')],
+            image],
             check=True, capture_output=True)
         for _ in range(60):
             try:

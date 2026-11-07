@@ -185,6 +185,13 @@ Revocation timer and authenticated admin pages
     Should Be Equal As Integers    ${rc}    0
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+    # The server holds only an Argon2id hash; the clear text is in a private file for the worker
+    ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.argon2id.v=19.' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${mode} =    Execute Command    runagent -m ${APP} stat -c %a admin-worker.token
+    Should Be Equal    ${mode.strip()}    600
+    ${leak} =    Execute Command    runagent -m ${APP} sh -c "grep -c \"$(cat admin-worker.token)\" vaultwarden.env || true"
+    Should Be Equal    ${leak.strip()}    0
     # Anonymous admin navigation is denied; the NS8 UI uses its authenticated POST bridge.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin

@@ -16,7 +16,7 @@ with agent.exclusive_file_lock('configuration'):
     with open('vaultwarden.env') as f:
         env = f.read()
     if not any(line.startswith('ADMIN_TOKEN=') for line in env.splitlines()):
-        env = env.rstrip('\n') + '\nADMIN_TOKEN=' + policy.admin_token() + '\n'
+        env = env.rstrip('\n') + '\nADMIN_TOKEN=' + policy.admin_token() + '\n'  # Argon2 hash; clear text in admin-worker.token
     if not any(line.startswith('NS8_MANAGED_CONFIG=') for line in env.splitlines()):
         env = env.rstrip('\n') + '\nNS8_MANAGED_CONFIG=true\n'
     if not any(line.startswith('ADMIN_RATELIMIT_MAX_BURST=') for line in env.splitlines()):

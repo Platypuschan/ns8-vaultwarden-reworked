@@ -221,13 +221,27 @@ def reconcile(api, members, state_dir='.'):
     return report
 
 
-def read_admin_token(env_path='vaultwarden.env'):
-    with open(env_path) as f:
-        for line in f:
-            name, _, value = line.rstrip('\n').partition('=')
-            if name == 'ADMIN_TOKEN' and value:
-                return value
-    raise RevokeError('ADMIN_TOKEN is missing in vaultwarden.env')
+def read_admin_token(token_path='admin-worker.token', env_path='vaultwarden.env'):
+    """Clear-text worker credential. vaultwarden.env holds only its Argon2 hash;
+    a clear-text ADMIN_TOKEN there (release before the hash) is still usable
+    until the next update replaces it."""
+    from vaultwarden_config import ADMIN_TOKEN, ADMIN_TOKEN_HASH
+    try:
+        with open(token_path) as f:
+            value = f.read().strip()
+        if ADMIN_TOKEN.fullmatch(value):
+            return value
+    except FileNotFoundError:
+        pass
+    try:
+        with open(env_path) as f:
+            for line in f:
+                name, _, value = line.rstrip('\n').partition('=')
+                if name == 'ADMIN_TOKEN' and value and not ADMIN_TOKEN_HASH.fullmatch(value):
+                    return value
+    except FileNotFoundError:
+        pass
+    raise RevokeError('The admin worker token is missing')
 
 
 STATUS_FILE = 'revocation-status.json'

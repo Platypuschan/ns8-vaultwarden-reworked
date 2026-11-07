@@ -10,6 +10,8 @@ sys.path.insert(0,str(ROOT/'imageroot/pypkg'))
 import vaultwarden_revoke as revoke
 
 
+HASH='$argon2id$v=19$m=19456,t=2,p=1$jXKqQhjZLkgo5+O0dKS+QmNa2/Fq00DnaduYD1Uip04$LJpdv4Ye7oqKDzpv81LyBMQMecsyVpPzm0ouUb4hSQ4'
+
 class FakeAdmin:
     def __init__(self, users):
         self.accounts={u['id']:dict(u) for u in users}
@@ -124,13 +126,24 @@ class RevokeTests(unittest.TestCase):
                 expected={'*':'\\2a','(':'\\28',')':'\\29','\\':'\\5c','\0':'\\00'}
                 self.assertEqual(revoke.escape_filter_chars(value),''.join(expected.get(c,c) for c in value))
 
-    def test_admin_token_is_read_from_the_environment(self):
+    def test_worker_token_comes_from_its_file_not_from_the_hash(self):
         env=Path(self.dir.name)/'vaultwarden.env'
+        token=Path(self.dir.name)/'admin-worker.token'
+        clear='w'*64
+        env.write_text('SSO_ONLY=true\nADMIN_TOKEN='+HASH+'\n')
+        with self.assertRaises(revoke.RevokeError):
+            revoke.read_admin_token(token,env)
+        token.write_text(clear+'\n')
+        self.assertEqual(revoke.read_admin_token(token,env),clear)
+
+    def test_clear_text_environment_token_of_earlier_releases_still_works_until_update(self):
+        env=Path(self.dir.name)/'vaultwarden.env'
+        token=Path(self.dir.name)/'admin-worker.token'
         env.write_text('SSO_ONLY=true\nADMIN_TOKEN=abc\n')
-        self.assertEqual(revoke.read_admin_token(env),'abc')
+        self.assertEqual(revoke.read_admin_token(token,env),'abc')
         env.write_text('SSO_ONLY=true\n')
         with self.assertRaises(revoke.RevokeError):
-            revoke.read_admin_token(env)
+            revoke.read_admin_token(token,env)
 
 
 if __name__=='__main__': unittest.main()

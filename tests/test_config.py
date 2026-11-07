@@ -11,6 +11,15 @@ sys.path.insert(0,str(ROOT/'imageroot/pypkg'))
 import vaultwarden_config as policy
 
 
+HASH='$argon2id$v=19$m=19456,t=2,p=1$jXKqQhjZLkgo5+O0dKS+QmNa2/Fq00DnaduYD1Uip04$LJpdv4Ye7oqKDzpv81LyBMQMecsyVpPzm0ouUb4hSQ4'
+
+
+def fake_hash(token):
+    import base64, hashlib
+    digest = base64.b64encode(hashlib.sha256(token.encode()).digest()).decode().rstrip('=')
+    return '$argon2id$v=19$m=19456,t=2,p=1$' + digest[:22] + '$' + digest
+
+
 class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.config={'host':'vaultwarden.example.com','domain':'ad.example.com',
@@ -22,14 +31,66 @@ class ConfigTests(unittest.TestCase):
     def test_upgrade_rotates_only_the_formerly_exported_worker_credential(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'vaultwarden.env'
+            token = Path(directory) / 'admin-worker.token'
             path.write_text('ADMIN_TOKEN=previously-exported\nSSO_CLIENT_SECRET=keep-this\nDOMAIN=https://vault.example.test\n')
-            policy.rotate_worker_token(path)
+            policy.rotate_worker_token(path, token, hasher=fake_hash)
             values = dict(line.split('=', 1) for line in path.read_text().splitlines())
-            self.assertTrue(values['ADMIN_TOKEN'] != 'previously-exported')
-            self.assertRegex(values['ADMIN_TOKEN'], policy.ADMIN_TOKEN)
+            clear = token.read_text().strip()
+            self.assertRegex(clear, policy.ADMIN_TOKEN)
+            self.assertEqual(values['ADMIN_TOKEN'], fake_hash(clear))
+            self.assertNotIn(clear, path.read_text())
+            self.assertRegex(values['ADMIN_TOKEN'], policy.ADMIN_TOKEN_HASH)
             self.assertEqual(values['SSO_CLIENT_SECRET'], 'keep-this')
             self.assertEqual(values['DOMAIN'], 'https://vault.example.test')
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(token.stat().st_mode & 0o777, 0o600)
+
+    def test_failed_hashing_leaves_previous_pair_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vaultwarden.env'
+            token = Path(directory) / 'admin-worker.token'
+            path.write_text('ADMIN_TOKEN=' + HASH + '\n')
+            token.write_text('o' * 64 + '\n')
+            def broken(_): raise RuntimeError('no podman')
+            with self.assertRaises(RuntimeError):
+                policy.rotate_worker_token(path, token, hasher=broken)
+            self.assertEqual(path.read_text(), 'ADMIN_TOKEN=' + HASH + '\n')
+            self.assertEqual(token.read_text(), 'o' * 64 + '\n')
+
+    def test_admin_token_keeps_complete_hashed_pair_and_replaces_others(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'vaultwarden.env'
+            token = Path(directory) / 'admin-worker.token'
+            # new installation
+            first = policy.admin_token(path, token, hasher=fake_hash)
+            self.assertRegex(first, policy.ADMIN_TOKEN_HASH)
+            path.write_text('ADMIN_TOKEN=' + first + '\n')
+            clear = token.read_text()
+            self.assertEqual(policy.admin_token(path, token, hasher=fake_hash), first)
+            self.assertEqual(token.read_text(), clear)
+            # clear-text token of an earlier release
+            path.write_text('ADMIN_TOKEN=' + 'c' * 64 + '\n')
+            replaced = policy.admin_token(path, token, hasher=fake_hash)
+            self.assertRegex(replaced, policy.ADMIN_TOKEN_HASH)
+            self.assertNotEqual(token.read_text(), clear)
+            # restored environment without the clear-text file
+            path.write_text('ADMIN_TOKEN=' + replaced + '\n')
+            token.unlink()
+            self.assertNotEqual(policy.admin_token(path, token, hasher=fake_hash), replaced)
+            self.assertTrue(token.exists())
+
+    def test_environment_accepts_a_hash_but_not_other_token_shapes(self):
+        env = policy.environment(policy.validate(self.config), self.registration, HASH)
+        self.assertIn('\nADMIN_TOKEN=' + HASH + '\n', '\n' + env)
+        for bad in ('$argon2id$x', HASH + '\nSSO_ONLY=false', '$argon2i$v=19$m=1,t=1,p=1$' + 'A' * 16 + '$' + 'A' * 32, 'short'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                policy.environment(policy.validate(self.config), self.registration, bad)
+
+    @unittest.skipUnless(os.environ.get('VW_RUNTIME_IMAGE'), 'needs podman and VW_RUNTIME_IMAGE')
+    def test_runtime_image_makes_a_valid_argon2_hash(self):
+        value = policy.argon2_hash('r' * 64, os.environ['VW_RUNTIME_IMAGE'])
+        self.assertRegex(value, policy.ADMIN_TOKEN_HASH)
+        self.assertNotIn('r' * 64, value)
 
     def test_policy_changes_require_explicit_matching_reconfiguration(self):
         state = {'enforced': False, 'enabled': True, 'group_path': '/services_vaultwarden',
@@ -53,7 +114,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(parsed['SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION'],'false')
         self.assertEqual(parsed['SSO_AUTH_ONLY_NOT_SESSION'],'true')
         self.assertEqual(parsed['SSO_CLIENT_SECRET'],'test-only-secret')
-        self.assertEqual(parsed['ADMIN_TOKEN'],self.token)
+        self.assertEqual(parsed['ADMIN_TOKEN'],self.token)  # raw still accepted by the generic validator
         self.assertEqual(parsed['NS8_MANAGED_CONFIG'],'true')
         self.assertEqual(parsed['ADMIN_RATELIMIT_MAX_BURST'],'30')
         self.assertEqual(parsed['ALLOWED_IFRAME_ANCESTORS'],'')
@@ -74,13 +135,6 @@ class ConfigTests(unittest.TestCase):
         for token in ('', 'short', 'a'*60+'\nSSO_ONLY=false', 'a'*60+' x', None):
             with self.subTest(token=token), self.assertRaises(ValueError):
                 policy.environment(self.config,self.registration,token)
-        with tempfile.TemporaryDirectory() as d:
-            env=Path(d)/'vaultwarden.env'
-            new=policy.admin_token(env)
-            self.assertRegex(new,r'^[A-Za-z0-9_-]{64}$')
-            self.assertNotEqual(new,policy.admin_token(env))
-            env.write_text(policy.environment(self.config,self.registration,new))
-            self.assertEqual(policy.admin_token(env),new)
 
     def test_input_and_env_injection_rejected(self):
         for field,value in [('host','bad\nSSO_ONLY=false'),('domain','ad.test/../../master'),

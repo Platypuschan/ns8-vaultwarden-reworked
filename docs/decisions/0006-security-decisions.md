@@ -50,8 +50,13 @@ owners with a per-user IP allowlist. Now:
 The Redis owner list considered first is not possible: module credentials read
 only cluster/*, node/* and module/* keys, and role changes publish no event.
 
-The worker uses a separate server-only X-NS8-Worker header carrying the existing
-internal token. An old VW_ADMIN cookie alone is insufficient when managed mode
+The worker uses a separate server-only X-NS8-Worker header carrying the internal
+token. Since this change `vaultwarden.env` (and so the container) holds only an
+Argon2id hash of it (`ADMIN_TOKEN=$argon2id$...`, made by `vaultwarden hash` of the
+runtime image); the clear text is in `state/admin-worker.token` (mode 0600, part of
+the module backup) and read only by `revoke-access`. Every update makes a new pair;
+a clear-text token of an earlier release or a restored environment without the
+file is replaced. If hashing fails the previous pair stays in place and the update fails. An old VW_ADMIN cookie alone is insufficient when managed mode
 is active. The public static-token login cannot bypass the bridge. Login POSTs
 from browsers require an explicitly permitted origin. Existing login rate
 limits remain in place; no new P3 brute-force policy is introduced.
