@@ -87,13 +87,22 @@ class HistoricalIdpRecipeTests(unittest.TestCase):
             package = Path(directory) / 'imageroot/pypkg'
             package.mkdir(parents=True)
             (package / 'idpfed.py').write_text("raise SystemExit('UNVERIFIED_IMPORT_EXECUTED')")
+            # Model a shallow checkout without fetching or modifying Git history.
+            # Poisoned source must be rejected before any fixture-history lookup.
+            tools = Path(directory) / 'tools'
+            tools.mkdir()
+            git = tools / 'git'
+            git.write_text('#!/bin/sh\nprintf "UNEXPECTED_HISTORY_LOOKUP\\n" >&2\nexit 97\n')
+            git.chmod(0o755)
             env = dict(os.environ, IDP_UPSTREAM_SOURCE_ROOT=directory,
-                       HISTORICAL_IDP_RUNTIME_IMAGE='unused', VW_RUNTIME_IMAGE='unused')
+                       HISTORICAL_IDP_RUNTIME_IMAGE='unused', VW_RUNTIME_IMAGE='unused',
+                       PATH=str(tools) + os.pathsep + os.environ['PATH'])
             result = subprocess.run(['python3', str(ROOT / 'tests/historical_idp/run.py')],
                                     env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('historical upstream Python integrity mismatch', result.stderr)
         self.assertNotIn('UNVERIFIED_IMPORT_EXECUTED', result.stderr)
+        self.assertNotIn('UNEXPECTED_HISTORY_LOOKUP', result.stderr)
 
     def test_historical_ci_builds_and_runs_read_only_with_full_history(self):
         path = ROOT / '.github/workflows/historical-idp.yml'

@@ -16,8 +16,10 @@ sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = '4862c791adf50fae5f3cd7ed6dc371272147e368:tests/integration/run.py'
-source = subprocess.check_output(['git', '-C', str(ROOT), 'show', FIXTURE], text=True)
+# Validate external input before consulting optional fixture history. Ordinary
+# unit discovery must reject poison even in a shallow production CI checkout.
 upstream = verify_python(Path(os.environ['IDP_UPSTREAM_SOURCE_ROOT']).resolve())
+source = subprocess.check_output(['git', '-C', str(ROOT), 'show', FIXTURE], text=True)
 image = os.environ['HISTORICAL_IDP_RUNTIME_IMAGE']
 os.environ['VW_RUNTIME_IMAGE']  # No implicit/reused production runtime.
 assert (upstream / 'idpfed.py').is_file(), 'need the historical upstream source'
