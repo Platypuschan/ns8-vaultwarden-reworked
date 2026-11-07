@@ -1,5 +1,5 @@
 # Minimal upstream change: SSO-only also refuses API-key device login.
-FROM docker.io/library/rust:1.97.1-slim-trixie AS build
+FROM docker.io/library/rust:1.99.1-slim-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git pkg-config libssl-dev build-essential ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/dani-garcia/vaultwarden.git && git fetch --depth=1 origin 6ed6921cc2b0e03b4d74189574d2a5e71c512e97 && git checkout --detach FETCH_HEAD
