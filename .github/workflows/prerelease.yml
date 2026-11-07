@@ -24,7 +24,7 @@ jobs:
       candidate: ${{ steps.images.outputs.candidate }}
       version: ${{ steps.images.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: pip install requests jsonschema
       - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - run: python3 tests/check_syntax.py
@@ -60,10 +60,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: refs
         run: echo "idp=$(cat IDP_REF)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Platypuschan/ns8-idp-reworked
           ref: ${{ steps.refs.outputs.idp }}
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y podman
       - run: pip install requests
       - run: npm install --prefix /tmp/vw-admin-browser --no-audit --no-fund playwright@1.64.1
@@ -132,7 +132,7 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y skopeo
       - name: Promote tested digests and create the prerelease
         env:
