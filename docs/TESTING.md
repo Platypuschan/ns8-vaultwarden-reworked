@@ -1,5 +1,7 @@
 # Aktueller Reworked-Prüfumfang
 
+Der weiterhin manuell baubare historische IdP-Overlay wurde separat kohärent auf Keycloak/SPI 26.8.2 aktualisiert: [Rezept, erhaltene NS8-Provider und aktuelle historische Prüfanleitung](HISTORICAL-IDP-2682.md). Dies ändert weder die unabhängige produktive IdP-Runtime noch die nachstehenden ursprünglichen Nachweise.
+
 Die nachfolgenden Abschnitte sind historische Prototyp-Nachweise. Die eigenständigen RC-Pakete sind inzwischen gemeinsam in NS8 geprüft; siehe [Release-Bericht](RELEASE-0.1.0-rc.1.md). Die aktuelle lokale Protokollsuite benötigt IDP_SOURCE_ROOT (Checkout des unabhängigen IdP), IDP_RUNTIME_IMAGE und VW_RUNTIME_IMAGE. Die alte Prototyp-Migrationsprüfung wurde entfernt.
 
 ```sh

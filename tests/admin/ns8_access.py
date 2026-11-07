@@ -18,7 +18,8 @@ module, host = sys.argv[1:]
 def task(action, data=None, user=None, password=None, success=True):
     args = ['api-cli', 'run', action, '--data', json.dumps(data or {})]
     if user:
-        login = subprocess.run(['api-cli', 'login', '-u', user, '-p', password, '-o'], capture_output=True, text=True)
+        # Bind the value to its option: token_urlsafe() can start with '-'.
+        login = subprocess.run(['api-cli', 'login', '-u', user, f'--password={password}', '-o'], capture_output=True, text=True)
         assert login.returncode == 0, 'NS8 login failed (output hidden)'
         args += ['-t', login.stdout.strip()]
     result = subprocess.run(args, capture_output=True, text=True)
