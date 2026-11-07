@@ -18,6 +18,40 @@ IDP = ROOT / 'prototype/idp'
 
 
 class HistoricalIdpRecipeTests(unittest.TestCase):
+    def test_token_lifespan_uses_issued_claims_not_remaining_seconds(self):
+        import base64
+        import json
+        source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
+        definitions: list[ast.stmt] = [node for node in source.body if isinstance(node, ast.FunctionDef)]
+        namespace: dict[str, Any] = dict(base64=base64, json=json)
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), '<harness helpers>', 'exec'), namespace)
+        self.assertIn('assert_token_lifespan', namespace)
+        claims = base64.urlsafe_b64encode(json.dumps({'iat': 1000, 'exp': 1600}).encode()).decode().rstrip('=')
+        token = {'access_token': 'header.' + claims + '.signature', 'expires_in': 599}
+        namespace['assert_token_lifespan'](self, token, 600)
+        for issued, remaining in ((599, 599), (601, 600), (600, 594), (600, 601)):
+            with self.subTest(issued=issued, remaining=remaining):
+                claims = base64.urlsafe_b64encode(json.dumps(
+                    {'iat': 1000, 'exp': 1000 + issued}).encode()).decode().rstrip('=')
+                invalid = {'access_token': 'header.' + claims + '.signature', 'expires_in': remaining}
+                with self.assertRaises(AssertionError):
+                    namespace['assert_token_lifespan'](self, invalid, 600)
+
+    def test_private_diagnostics_keep_fixture_line_without_exception_values(self):
+        source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
+        result_class = next(node for node in source.body
+                            if isinstance(node, ast.ClassDef) and node.name == 'PrivateResult')
+        fixture = '4862c791adf50fae5f3cd7ed6dc371272147e368:tests/integration/run.py'
+        namespace: dict[str, Any] = dict(unittest=unittest, FIXTURE=fixture)
+        exec(compile(ast.Module(body=[result_class], type_ignores=[]), '<private result>', 'exec'), namespace)
+        exec(compile("def runTest(self):\n    raise AssertionError('PRIVATE_CREDENTIAL')\n", fixture, 'exec'), namespace)
+        case = type('FixtureCase', (unittest.TestCase,), {'runTest': namespace['runTest']})
+        output = io.StringIO()
+        result = unittest.TextTestRunner(stream=output, resultclass=namespace['PrivateResult']).run(case())
+        self.assertFalse(result.wasSuccessful())
+        self.assertIn('AssertionError fixture-lines=2', output.getvalue())
+        self.assertNotIn('PRIVATE_CREDENTIAL', output.getvalue())
+
     def test_cleanup_registers_failed_launch_and_attempts_all_owned_resources(self):
         # Execute the real harness helpers; only the Podman process boundary is stubbed.
         source = ast.parse((ROOT / 'tests/historical_idp/run.py').read_text())
@@ -30,7 +64,8 @@ class HistoricalIdpRecipeTests(unittest.TestCase):
                 raise RuntimeError('private launch detail')
             return subprocess.CompletedProcess(args, 1 if 'exists' in args else 0)
         owned = {'container': set(), 'volume': set(), 'network': {'owned-network'}}
-        namespace: dict[str, Any] = dict(original_cmd=command, owned=owned, unittest=unittest)
+        namespace: dict[str, Any] = dict(original_cmd=command, owned=owned, unittest=unittest,
+                                         FIXTURE='immutable fixture')
         exec(compile(ast.Module(body=definitions, type_ignores=[]), '<harness helpers>', 'exec'), namespace)
         with self.assertRaises(RuntimeError):
             namespace['tracked_cmd']('podman', 'run', '--name', 'owned-container',
