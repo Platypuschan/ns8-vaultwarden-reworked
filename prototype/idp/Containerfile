@@ -4,7 +4,7 @@ WORKDIR /src
 COPY pom.xml .
 COPY src src
 RUN mvn -B -q package
-FROM ghcr.io/nethserver/idp-keycloak@sha256:94aee54fd9a0020a0853287596fc2531058e4020d341f0a8146a7a1b1ba654fe
+FROM ghcr.io/nethserver/idp-keycloak@sha256:68b73b4f5130609fbc69fdc89cf493b0e9ee2edbad271e3bb640b03b113a996d
 COPY --from=provider /src/target/ns8-client-access.jar /opt/keycloak/providers/
 ENV KC_DB=postgres KC_FEATURES=scripts KC_HEALTH_ENABLED=true KC_CACHE=local
 RUN /opt/keycloak/bin/kc.sh build
