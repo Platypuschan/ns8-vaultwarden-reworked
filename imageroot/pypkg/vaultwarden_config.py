@@ -109,7 +109,7 @@ def argon2_hash(token, image, timeout=90):
         raise ValueError('Invalid admin token')
     master, slave = pty.openpty()
     try:
-        process = subprocess.Popen(['podman', 'run', '--rm', '-t', '-i', '--pull=never', '--network=none',
+        process = subprocess.Popen(['podman', 'run', '--rm', '-t', '-i', '--network=none',
             '--entrypoint', '/vaultwarden', image, 'hash', '--preset', 'owasp'],
             stdin=slave, stdout=slave, stderr=slave, close_fds=True)
     finally:
