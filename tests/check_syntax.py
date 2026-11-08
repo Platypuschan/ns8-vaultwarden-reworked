@@ -6,7 +6,7 @@ import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
 for p in ROOT.rglob('*'):
-    if not p.is_file() or any(part in ('.git','.venv','outputs','target','__pycache__') for part in p.parts):
+    if not p.is_file() or any(part in ('.git','.venv','outputs','target','__pycache__','node_modules','dist','.yarn') for part in p.parts):
         continue
     try: source=p.read_text()
     except UnicodeDecodeError: continue

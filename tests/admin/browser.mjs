@@ -5,6 +5,10 @@ const browser = await chromium.launch({headless: true,
 const base = process.env.TEST_BASE;
 const vault = base.replace('cluster.example.test', 'vault.example.test');
 const cluster = base + '/cluster-admin/';
+// Optional: VW_SCREENSHOTS=<directory> keeps a picture of each module page
+async function shot(page, name) {
+  if (process.env.VW_SCREENSHOTS) await page.screenshot({path: `${process.env.VW_SCREENSHOTS}/${name}.png`});
+}
 
 // The admin page must open in the application frame, the cluster manager stays.
 async function adminFrame(page) {
@@ -42,7 +46,7 @@ try {
   console.log('Browser SSO link: no email step before the IdP');
   await direct.close();
 
-  for (const role of ['owner1', 'owner2', 'reader', 'tab', 'public-suffix']) {
+  for (const role of process.env.VW_ONLY === 'panel' ? [] : ['owner1', 'owner2', 'reader', 'tab', 'public-suffix']) {
     const context = await browser.newContext({ignoreHTTPSErrors: true});
     const page = await context.newPage();
     const manager = role === 'public-suffix' ? cluster.replace('cluster.example.test', 'cluster.two.co.uk') : cluster;
@@ -87,9 +91,10 @@ try {
       assert.equal(context.pages().length, 1);
       // The admin page sits in the module page next to the NS8 menu
       const application = page.frameLocator('iframe').first();
-      await application.getByRole('link', {name: 'Settings'}).waitFor();
+      await application.locator('.bx--side-nav__link-text').filter({hasText: 'Settings'}).first().waitFor();
       const admin = await application.locator('iframe[name=vaultwarden-admin-frame]').boundingBox();
       assert(admin.width > 600 && admin.height > 400, `admin frame ${admin.width}x${admin.height} too small`);
+      await shot(page, 'advanced-admin-' + role);
       const warning = application.locator('.bx--inline-notification--warning');
       if (role === 'owner1') {
         await warning.filter({hasText: 'access revocation is disturbed'}).waitFor();
@@ -150,6 +155,80 @@ try {
       }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');
     }
+    await context.close();
+  }
+
+  // The native pages, against the real runtime through the module actions
+  {
+    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport: {width: 1500, height: 1100}});
+    const page = await context.newPage();
+    const open = async (name, title) => {
+      await page.goto(cluster + '?page=' + name + '&role=owner2');
+      const app = page.frameLocator('iframe').first();
+      await app.locator('h2').filter({hasText: title}).waitFor();
+      return app;
+    };
+    const settled = app => app.locator('.bx--skeleton__text').first().waitFor({state: 'detached'}).catch(() => {});
+    const confirm = app => app.locator('.bx--modal.is-visible').getByRole('button', {name: /^(Confirm|Reset to defaults|Delete organization)$/}).click();
+    let app = await open('settings', 'Settings');
+    await settled(app);
+    await app.getByText('General settings').first().waitFor();
+    // Managed values (single sign-on, domain, admin token) are not offered at all
+    const text = await app.locator('body').innerText();
+    for (const hidden of ['OpenID Connect', 'SSO', 'Admin token', 'Domain URL', 'Yubikey'])
+      assert(!text.includes(hidden), hidden + ' must not be offered');
+    assert.deepEqual((await app.locator('.bx--accordion__title').allInnerTexts()), [
+      'General settings', 'Advanced settings', 'Global Duo settings (users can override them)',
+      'SMTP email settings', 'Email 2FA settings']);
+    // Save, reload, see it again; reset restores the default
+    const limit = app.getByLabel('Per-user attachment storage limit (KB)');
+    await limit.fill('12345');
+    await shot(page, 'before-save');
+    console.log('Save disabled:', await app.getByRole('button', {name: 'Save'}).isDisabled(), 'value:', await limit.inputValue());
+    await app.getByRole('button', {name: 'Save'}).click();
+    await app.getByText('Settings saved.').waitFor();
+    await shot(page, 'settings-saved');
+    app = await open('settings', 'Settings');
+    await settled(app);
+    assert.equal(await app.getByLabel('Per-user attachment storage limit (KB)').inputValue(), '12345');
+    await app.getByRole('button', {name: 'Reset to defaults'}).click();
+    await confirm(app);
+    await app.getByText('Settings reset to defaults.').waitFor();
+    assert.equal(await app.getByLabel('Per-user attachment storage limit (KB)').inputValue(), '');
+    // Mail mode choice: off, cluster smarthost (unavailable here), custom
+    await app.getByText('SMTP email settings').click();
+    const modes = await app.locator('select').first().locator('option').allInnerTexts();
+    assert.deepEqual(modes, ['Email disabled', 'Cluster smarthost (the rest custom)', 'Custom']);
+    console.log('Browser settings: managed fields hidden, save/reset against the real runtime');
+
+    app = await open('users', 'Users');
+    await settled(app);
+    const row = address => app.locator('tr').filter({hasText: address});
+    await row('one@example.test').waitFor();
+    await shot(page, 'users');
+    await row('one@example.test').getByRole('button', {name: 'Disable'}).click();
+    await confirm(app);
+    await row('one@example.test').locator('.bx--tag').filter({hasText: 'Disabled'}).waitFor();
+    await row('one@example.test').getByRole('button', {name: 'Enable'}).click();
+    await confirm(app);
+    await row('one@example.test').getByRole('button', {name: 'Disable'}).waitFor();
+    await row('one@example.test').getByRole('button', {name: 'Delete user'}).click();
+    await confirm(app);
+    await row('one@example.test').waitFor({state: 'detached'});
+    await row('two@example.test').waitFor();
+    console.log('Browser users: disable, enable and delete against the real runtime');
+
+    app = await open('organizations', 'Organizations');
+    await settled(app);
+    await app.getByText('No organizations.').waitFor();
+    await shot(page, 'organizations');
+
+    app = await open('diagnostics', 'Diagnostics');
+    await settled(app);
+    await app.getByText('Server version').waitFor();
+    await app.getByText('Server time (UTC)').waitFor();
+    await shot(page, 'diagnostics');
+    console.log('Browser diagnostics: versions, network and time shown');
     await context.close();
   }
 } finally {

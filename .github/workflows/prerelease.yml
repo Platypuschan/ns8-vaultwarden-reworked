@@ -99,6 +99,7 @@ jobs:
           PLAYWRIGHT_MODULE: file:///tmp/vw-admin-browser/node_modules/playwright/index.mjs
         run: |
           python3 tests/admin/security.py
+          python3 tests/admin/smtp_mode.py
           python3 tests/admin/browser.py
   qemu:
     needs: build

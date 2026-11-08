@@ -80,8 +80,8 @@
                     />
                   </td>
                   <td class="break">{{ user.sso_identifier }}</td>
-                  <td>{{ user.created_at }}</td>
-                  <td>{{ user.last_active }}</td>
+                  <td class="nowrap">{{ user.created_at }}</td>
+                  <td class="nowrap">{{ user.last_active }}</td>
                   <td>{{ user.cipher_count }}</td>
                   <td>
                     {{ user.attachment_count }}
@@ -316,7 +316,8 @@ export default {
   max-width: 14rem;
 }
 
-.actions {
+.actions,
+.nowrap {
   white-space: nowrap;
 }
 </style>

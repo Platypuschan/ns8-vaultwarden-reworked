@@ -81,7 +81,8 @@ def get_data(section, connection=None):
     if section not in SECTIONS:
         raise ValueError('Unknown section')
     connection = connection or api()
-    data = connection.request('GET', f'/admin/ns8/data/{section}')
+    # The diagnostics ask the internet (versions, DNS, time) and may wait for timeouts
+    data = connection.request('GET', f'/admin/ns8/data/{section}', timeout=120 if section == 'diagnostics' else 30)
     if section == 'settings':
         return visible_settings(data)
     if section == 'users':
@@ -211,11 +212,14 @@ def write_smtp_mode(mode, path=policy.SMTP_MODE_FILE):
     policy.private_write(path, json.dumps({'mode': mode}))
 
 
-def apply_smtp_mode(mode, smarthost=None, env_path='vaultwarden.env'):
+def apply_smtp_mode(mode, smarthost=None, env_path='vaultwarden.env', host=None):
     """Rewrite the SMTP lines of the environment file for mode."""
+    if host is None:
+        with open('settings.json') as stream:
+            host = json.load(stream)['host']
     with open(env_path) as stream:
         text = stream.read()
-    policy.private_write(env_path, policy.apply_smtp(text, mode, smarthost))
+    policy.private_write(env_path, policy.apply_smtp(text, mode, smarthost, host))
 
 
 def guarded(function, field='operation'):

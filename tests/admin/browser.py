@@ -122,6 +122,11 @@ def run_action(role, action, data):
 
 
 def queue_task(role, request):
+    # A task runs after the request returned, as in the cluster manager
+    threading.Thread(target=finish_task, args=(role, request), daemon=True).start()
+
+
+def finish_task(role, request):
     action, event_id = request['action'], request['extra']['eventId']
     try:
         output = run_action(role, action, request.get('data') or {})
@@ -181,7 +186,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 pending, events[:] = list(events), []
             self.send(200, json.dumps(pending).encode(), 'application/json')
         elif self.path.startswith('/cluster-admin/css/'):
-            self.send(200, b'', 'text/css')
+            # The cluster manager provides the Carbon styles; use the ones of the build tree if present
+            carbon = ROOT / 'ui/node_modules/carbon-components/css/carbon-components.min.css'
+            layout = b'\n.app-content > .bx--grid { margin-left: 16rem; width: auto; }\n'
+            self.send(200, (carbon.read_bytes() if carbon.is_file() else b'') + layout, 'text/css')
         elif self.path.startswith('/cluster-admin/apps/'):
             name = urllib.parse.urlsplit(self.path).path.split('/', 4)[-1] or 'index.html'
             target = (ROOT / 'ui/dist' / name).resolve()
@@ -257,6 +265,10 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
             '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
             '-e', 'ALLOWED_IFRAME_ANCESTORS=' + base + ' ' + suffix_cluster, image)
         ready()
+        # Two accounts for the user page (an admin invitation creates them without mail)
+        worker = revoke.AdminAPI(f'http://127.0.0.1:{app_port}', token, state_dir=STATE_DIR)
+        for address in ('one@example.test', 'two@example.test'):
+            worker.request('POST', '/admin/invite', {'email': address})
         subprocess.run(['node', str(ROOT / 'tests/admin/browser.mjs')], check=True,
             env=dict(os.environ, TEST_BASE=base))
     finally:

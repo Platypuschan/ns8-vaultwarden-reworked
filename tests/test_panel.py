@@ -46,7 +46,7 @@ class FakeConnection:
         self.calls = []
         self.answers = answers or {}
 
-    def request(self, method, path, payload=None):
+    def request(self, method, path, payload=None, timeout=30):
         self.calls.append((method, path, payload))
         return self.answers.get(path)
 
@@ -165,6 +165,7 @@ class UserAndOrganizationTests(unittest.TestCase):
         self.assertEqual(revoke._error_detail(b'<html>'), '')
 
 
+HOST = 'vault.example.org'
 SMARTHOST = {'enabled': True, 'host': 'smtp.example.org', 'port': 465, 'username': 'user', 'password': 'pa ss#word',
     'encrypt_smtp': 'tls', 'tls_verify': True}
 
@@ -181,7 +182,7 @@ class SmtpModeTests(unittest.TestCase):
         self.assertIn('smtp_from', lines['NS8_MANAGED_FIELDS'].split(','))
 
     def test_smarthost_values_are_taken_over_but_sender_stays_editable(self):
-        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', SMARTHOST))
+        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', SMARTHOST, HOST))
         self.assertEqual((lines['SMTP_HOST'], lines['SMTP_PORT'], lines['SMTP_SECURITY']),
             ('smtp.example.org', '465', 'force_tls'))
         self.assertEqual((lines['SMTP_USERNAME'], lines['SMTP_PASSWORD']), ('user', 'pa ss#word'))
@@ -193,22 +194,31 @@ class SmtpModeTests(unittest.TestCase):
 
     def test_smarthost_encryption_and_certificate_check_mapping(self):
         lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost',
-            dict(SMARTHOST, encrypt_smtp='starttls', tls_verify=False, port=587)))
+            dict(SMARTHOST, encrypt_smtp='starttls', tls_verify=False, port=587), HOST))
         self.assertEqual(lines['SMTP_SECURITY'], 'starttls')
         self.assertEqual(lines['SMTP_ACCEPT_INVALID_CERTS'], 'true')
-        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', dict(SMARTHOST, encrypt_smtp='none')))
+        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', dict(SMARTHOST, encrypt_smtp='none'), HOST))
         self.assertEqual(lines['SMTP_SECURITY'], 'off')
+
+    def test_smarthost_mode_has_a_sender_vaultwarden_accepts(self):
+        # Vaultwarden refuses to start with SMTP_HOST but no SMTP_FROM
+        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', SMARTHOST, HOST))
+        self.assertEqual(lines['SMTP_FROM'], 'no-reply@vault.example.org')
+        lines = dict(line.split('=', 1) for line in policy.smtp_lines('smarthost', dict(SMARTHOST, username='relay@example.org'), HOST))
+        self.assertEqual(lines['SMTP_FROM'], 'relay@example.org')
+        with self.assertRaises(ValueError):
+            policy.smtp_lines('smarthost', SMARTHOST)
 
     def test_smarthost_mode_needs_a_smarthost(self):
         for smarthost in (None, {}, {'enabled': False, 'host': 'h'}, {'enabled': True, 'host': ''}):
             with self.assertRaises(ValueError):
-                policy.smtp_lines('smarthost', smarthost)
+                policy.smtp_lines('smarthost', smarthost, HOST)
         with self.assertRaises(ValueError):
             policy.smtp_lines('other')
 
     def test_new_mode_replaces_earlier_lines_and_keeps_other_values(self):
         env = 'DOMAIN=https://vault\nADMIN_TOKEN=$argon2id$x\n'
-        first = policy.apply_smtp(env, 'smarthost', SMARTHOST)
+        first = policy.apply_smtp(env, 'smarthost', SMARTHOST, HOST)
         second = policy.apply_smtp(first, 'disabled')
         self.assertTrue(second.startswith(env))
         self.assertNotIn('SMTP_HOST', second)
@@ -218,7 +228,7 @@ class SmtpModeTests(unittest.TestCase):
 
     def test_multiline_values_are_refused(self):
         with self.assertRaises(ValueError):
-            policy.smtp_lines('smarthost', dict(SMARTHOST, password='a\nB=1'))
+            policy.smtp_lines('smarthost', dict(SMARTHOST, password='a\nB=1'), HOST)
 
     def test_mode_file_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -235,7 +245,7 @@ class SmtpModeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, 'vaultwarden.env')
             Path(path).write_text('DOMAIN=https://vault\n')
-            panel.apply_smtp_mode('smarthost', SMARTHOST, path)
+            panel.apply_smtp_mode('smarthost', SMARTHOST, path, HOST)
             text = Path(path).read_text()
             self.assertIn('SMTP_HOST=smtp.example.org\n', text)
             self.assertEqual(oct(os.stat(path).st_mode & 0o777), '0o600')

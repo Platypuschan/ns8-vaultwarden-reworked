@@ -126,11 +126,11 @@ class AdminAPI:
         except FileNotFoundError:
             self.cookie = None
 
-    def _open(self, method, path, body=None, headers=None):
+    def _open(self, method, path, body=None, headers=None, timeout=30):
         request = urllib.request.Request(self.base_url + path, data=body, method=method, headers=dict(headers or {}, **{'X-NS8-Worker': self.token}))
         opener = urllib.request.build_opener(_NoRedirect())
         try:
-            with opener.open(request, timeout=30) as response:
+            with opener.open(request, timeout=timeout) as response:
                 return response.status, response.headers, response.read()
         except urllib.error.HTTPError as error:
             return error.code, error.headers, error.read()
@@ -153,7 +153,7 @@ class AdminAPI:
         with os.fdopen(fd, 'w') as f:
             f.write(cookie)
 
-    def request(self, method, path, payload=None):
+    def request(self, method, path, payload=None, timeout=30):
         for attempt in (1, 2):
             if not self.cookie:
                 self.login()
@@ -162,7 +162,7 @@ class AdminAPI:
             if method in ('POST', 'DELETE'):
                 headers['Content-Type'] = 'application/json'
                 body = b'' if payload is None else json.dumps(payload).encode()
-            status, _, data = self._open(method, path, body, headers)
+            status, _, data = self._open(method, path, body, headers, timeout)
             if status in (401, 403, 303) and attempt == 1:
                 # The admin session expired
                 self.cookie = None

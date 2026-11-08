@@ -21,7 +21,7 @@ ADMIN_TOKEN_HASH = re.compile(r'\$argon2id\$v=19\$m=[0-9]{1,8},t=[0-9]{1,3},p=[0
 SMTP_MODE_FILE = 'smtp-mode.json'
 SMTP_MODES = ('disabled', 'smarthost', 'custom')
 # SMTP environment lines of the module; all others are left untouched
-SMTP_ENV_KEYS = ('_ENABLE_SMTP', 'USE_SENDMAIL', 'SMTP_HOST', 'SMTP_SECURITY', 'SMTP_PORT',
+SMTP_ENV_KEYS = ('_ENABLE_SMTP', 'USE_SENDMAIL', 'SMTP_HOST', 'SMTP_FROM', 'SMTP_SECURITY', 'SMTP_PORT',
     'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_ACCEPT_INVALID_CERTS', 'SMTP_ACCEPT_INVALID_HOSTNAMES',
     'NS8_MANAGED_FIELDS')
 # Clear-text worker credential: only the revocation worker reads it
@@ -215,7 +215,16 @@ def rotate_worker_token(env_path='vaultwarden.env', token_path=WORKER_TOKEN_FILE
     private_write(env_path, '\n'.join(lines + ['ADMIN_TOKEN=' + hashed]) + '\n')
 
 
-def smtp_lines(mode, smarthost=None):
+def smtp_sender(smarthost, host):
+    """Default sender of the smarthost mode (Vaultwarden needs one with a host): the login if it
+    is an address, else no-reply@ the module host. The module page can set another."""
+    username = str(smarthost.get('username') or '')
+    if re.fullmatch(r'[^@\s]+@[^@\s]+', username):
+        return username
+    return 'no-reply@' + host
+
+
+def smtp_lines(mode, smarthost=None, host=None):
     """Environment lines of an SMTP mode. Vaultwarden shows the fields named
     in NS8_MANAGED_FIELDS as read-only and ignores saved values for them."""
     if mode == 'custom':
@@ -223,9 +232,12 @@ def smtp_lines(mode, smarthost=None):
     if mode == 'smarthost':
         if not (smarthost and smarthost.get('enabled') and smarthost.get('host')):
             raise ValueError('The cluster has no smarthost configured')
+        if not host or not HOST.fullmatch(host):
+            raise ValueError('The module host is needed for the sender address')
         security = {'tls': 'force_tls', 'starttls': 'starttls'}.get(smarthost.get('encrypt_smtp'), 'off')
         verify = smarthost.get('tls_verify', True) is not False
         values = [('_ENABLE_SMTP', 'true'), ('USE_SENDMAIL', 'false'), ('SMTP_HOST', str(smarthost['host'])),
+            ('SMTP_FROM', smtp_sender(smarthost, host)),
             ('SMTP_SECURITY', security), ('SMTP_PORT', str(int(smarthost.get('port') or 25))),
             ('SMTP_ACCEPT_INVALID_CERTS', 'false' if verify else 'true'),
             ('SMTP_ACCEPT_INVALID_HOSTNAMES', 'false' if verify else 'true')]
@@ -248,7 +260,7 @@ def smtp_lines(mode, smarthost=None):
     return [f'{k}={v}' for k, v in values]
 
 
-def apply_smtp(env_text, mode, smarthost=None):
+def apply_smtp(env_text, mode, smarthost=None, host=None):
     """Environment text with the SMTP lines of mode instead of earlier ones."""
     lines = [line for line in env_text.splitlines() if line.partition('=')[0] not in SMTP_ENV_KEYS]
-    return '\n'.join(lines + smtp_lines(mode, smarthost)) + '\n'
+    return '\n'.join(lines + smtp_lines(mode, smarthost, host)) + '\n'

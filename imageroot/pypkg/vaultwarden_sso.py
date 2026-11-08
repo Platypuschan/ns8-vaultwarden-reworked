@@ -41,7 +41,7 @@ def cluster_hostnames():
     return names
 
 
-def smtp_block(env):
+def smtp_block(env, host):
     """Add the SMTP lines of the saved mode (module page) to a new environment."""
     import vaultwarden_panel as panel
     mode = panel.read_smtp_mode()
@@ -50,7 +50,7 @@ def smtp_block(env):
         smarthost = panel.read_smarthost()
         if not panel.smarthost_available(smarthost):
             mode = 'disabled'
-    return policy.apply_smtp(env, mode, smarthost)
+    return policy.apply_smtp(env, mode, smarthost, host)
 
 
 def prepare(config):
@@ -69,7 +69,7 @@ def prepare(config):
     })
     env = policy.environment(config, registration, policy.admin_token(),
         policy.frame_ancestors(cluster_hostnames()))
-    env = smtp_block(env)
+    env = smtp_block(env, config['host'])
     policy.private_write('vaultwarden.env', env)
     policy.private_write('settings.json', json.dumps(config))
     return registration
