@@ -291,11 +291,13 @@ Restore from a cluster backup into a new module identity
     ${backup} =    Run task    cluster/add-backup    {"repository":"${repo['id']}","schedule":"daily","retention":1,"instances":["${APP}"],"enabled":true,"name":"vw-restore-test"}
     ${out}    ${err}    ${rc} =    Execute Command    runagent -m node run-backup --backup ${backup}    return_rc=True    return_stdout=True    return_stderr=True
     Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
-    ${content} =    Run task    cluster/list-repository-content    {"repository":"${repo['id']}"}
+    ${content} =    Run task    cluster/read-backup-repositories    {}
     Log    ${content}
-    ${path} =    Evaluate    [c['path'] for c in $content if c['path'].endswith($uuid.strip())][0]
-    ${restored} =    Run task    cluster/restore-module    {"repository":"${repo['id']}","path":"${path}","snapshot":"","node":1,"replace":false}
-    ${new} =    Set Variable    ${restored['module_id']}
+    ${path} =    Evaluate    [c['path'] for c in $content if c['uuid'] == $uuid.strip() and c['repository_id'] == $repo['id']][0]
+    ${before} =    Execute Command    runagent -l
+    Run task    cluster/restore-module    {"repository":"${repo['id']}","path":"${path}","snapshot":"","node":1,"replace":false}    decode_json=${FALSE}
+    ${after} =    Execute Command    runagent -l
+    ${new} =    Evaluate    [m for m in $after.split() if m.startswith('vaultwarden') and m not in $before.split()][0]
     Should Not Be Equal    ${new}    ${APP}
     Set Suite Variable    ${RESTORED}    ${new}
     # Restored settings are kept, the service and the revocation timer stay off until SSO is prepared again
