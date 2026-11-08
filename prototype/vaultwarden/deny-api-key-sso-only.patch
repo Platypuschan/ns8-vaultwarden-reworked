@@ -76,13 +76,20 @@ index 4608ed7..2e9bef3 100644
              check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
              check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
 diff --git a/src/config.rs b/src/config.rs
-index 8bebc4d..5fc284b 100644
+index 8bebc4d..4e2e342 100644
 --- a/src/config.rs
 +++ b/src/config.rs
-@@ -21,6 +21,15 @@ use crate::{
+@@ -21,6 +21,22 @@ use crate::{
      },
  };
  
++// Shown instead of managed password values. The admin page warns about a
++// plain text ADMIN_TOKEN unless the field starts with "$argon2"; NS8 only
++// accepts a hashed token, so the mask of that field keeps the prefix.
++fn ns8_mask(name: &str) -> &'static str {
++    if name == "admin_token" { "$argon2id$********" } else { "********" }
++}
++
 +// The NS8 module owns these values; the rest of the admin settings stay editable.
 +fn ns8_managed(name: &str) -> bool {
 +    get_env_bool("NS8_MANAGED_CONFIG").unwrap_or(false)
@@ -95,7 +102,7 @@ index 8bebc4d..5fc284b 100644
  static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
      let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
      get_env("CONFIG_FILE").unwrap_or_else(|| storage::join_path(&data_folder, "config.json"))
-@@ -274,9 +283,17 @@ macro_rules! make_config {
+@@ -274,9 +290,17 @@ macro_rules! make_config {
                  Ok(Some(builder))
              }
  
@@ -114,7 +121,7 @@ index 8bebc4d..5fc284b 100644
                          self.$name = None;
                      }
                  )+)+
-@@ -401,10 +418,14 @@ macro_rules! make_config {
+@@ -401,10 +425,14 @@ macro_rules! make_config {
                          elements: vec![
                          $( // This repetition is for each element within a group
                              ElementData {
@@ -124,15 +131,15 @@ index 8bebc4d..5fc284b 100644
 -                                value: serde_json::to_value(&cfg.$name).unwrap_or_default(),
 -                                default: serde_json::to_value(&def.$name).unwrap_or_default(),
 +                                value: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
-+                                    serde_json::Value::String("********".into())
++                                    serde_json::Value::String(ns8_mask(stringify!($name)).into())
 +                                } else { serde_json::to_value(&cfg.$name).unwrap_or_default() },
 +                                default: if ns8_managed(stringify!($name)) && stringify!($ty) == "Pass" {
-+                                    serde_json::Value::String("********".into())
++                                    serde_json::Value::String(ns8_mask(stringify!($name)).into())
 +                                } else { serde_json::to_value(&def.$name).unwrap_or_default() },
                                  r#type: get_form_type(stringify!($ty)),
                                  doc: get_doc(concat!($($doc),+)),
                                  overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
-@@ -1527,7 +1548,7 @@ impl Config {
+@@ -1527,7 +1555,7 @@ impl Config {
      pub async fn load() -> Result<Self, Error> {
          // Loading from env and file
          let env = ConfigBuilder::from_env();
@@ -141,7 +148,7 @@ index 8bebc4d..5fc284b 100644
              Ok(Some(usr)) => (usr, ConfigFileStatus::Loaded),
              Ok(None) => (ConfigBuilder::default(), ConfigFileStatus::NotFound),
              Err(e) => {
-@@ -1544,6 +1565,7 @@ impl Config {
+@@ -1544,6 +1572,7 @@ impl Config {
                  (ConfigBuilder::default(), ConfigFileStatus::Error)
              }
          };
