@@ -104,7 +104,9 @@ try {
       assert(await frame.locator('#input_sso_enabled').isDisabled());
       assert(await frame.locator('#input_sso_enabled').isChecked());
       assert.notEqual(await frame.locator('#input_admin_token').getAttribute('readonly'), null);
-      assert.equal(await frame.locator('#input_admin_token').inputValue(), '********');
+      // The admin page warns about a plain text token unless the field starts with $argon2
+      assert.equal(await frame.locator('#input_admin_token').inputValue(), '$argon2id$********');
+      assert(await frame.locator('#admin_token_warning').evaluate(el => el.classList.contains('d-none')), 'plain text ADMIN_TOKEN warning must stay hidden');
       assert.equal(await frame.locator('#input_sso_client_secret').inputValue(), '********');
       if (role === 'owner1') {
         const result = await frame.evaluate(async data => {
