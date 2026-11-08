@@ -207,12 +207,13 @@
 import { mapState } from "vuex";
 import { TaskService, UtilService } from "@nethserver/ns8-ui-lib";
 import panelTask from "../mixins/panelTask";
+import pageBinding from "../mixins/pageBinding";
 
 const ROLE_NAMES = { 0: "owner", 1: "admin", 2: "user", 3: "manager" };
 
 export default {
   name: "Users",
-  mixins: [TaskService, UtilService, panelTask],
+  mixins: [TaskService, UtilService, panelTask, pageBinding("users")],
   data() {
     return {
       users: [],

@@ -160,12 +160,13 @@ import Save20 from "@carbon/icons-vue/es/save/20";
 import { mapState } from "vuex";
 import { TaskService, UtilService } from "@nethserver/ns8-ui-lib";
 import panelTask from "../mixins/panelTask";
+import pageBinding from "../mixins/pageBinding";
 import SettingField from "../components/SettingField";
 
 export default {
   name: "Settings",
   components: { SettingField },
-  mixins: [TaskService, UtilService, panelTask],
+  mixins: [TaskService, UtilService, panelTask, pageBinding("settings")],
   data() {
     return {
       Save20,

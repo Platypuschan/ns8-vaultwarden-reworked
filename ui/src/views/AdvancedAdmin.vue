@@ -58,12 +58,13 @@
 import { mapState } from "vuex";
 import { TaskService, UtilService } from "@nethserver/ns8-ui-lib";
 import panelTask from "../mixins/panelTask";
+import pageBinding from "../mixins/pageBinding";
 
 const TAB_NAME = "vaultwarden-admin";
 
 export default {
   name: "AdvancedAdmin",
-  mixins: [TaskService, UtilService, panelTask],
+  mixins: [TaskService, UtilService, panelTask, pageBinding("admin")],
   data() {
     return {
       loading: false,

@@ -199,6 +199,12 @@ try {
     assert.deepEqual(modes, ['Email disabled', 'Cluster smarthost (the rest custom)', 'Custom']);
     console.log('Browser settings: managed fields hidden, save/reset against the real runtime');
 
+    // A link in the cluster manager changes only the address: the frame has to follow
+    for (const [name, title] of [['users', 'Users'], ['organizations', 'Organizations'], ['settings', 'Settings']]) {
+      await page.evaluate(n => { location.hash = '#/apps/vaultwarden-reworked1?page=' + n; }, name);
+      await app.locator('h2').filter({hasText: title}).waitFor({timeout: 10000});
+    }
+    console.log('Browser navigation: the frame follows the address of the cluster manager');
     app = await open('users', 'Users');
     await settled(app);
     const row = address => app.locator('tr').filter({hasText: address});

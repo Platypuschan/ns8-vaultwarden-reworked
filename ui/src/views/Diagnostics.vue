@@ -71,10 +71,11 @@
 import { mapState } from "vuex";
 import { TaskService, UtilService } from "@nethserver/ns8-ui-lib";
 import panelTask from "../mixins/panelTask";
+import pageBinding from "../mixins/pageBinding";
 
 export default {
   name: "Diagnostics",
-  mixins: [TaskService, UtilService, panelTask],
+  mixins: [TaskService, UtilService, panelTask, pageBinding("diagnostics")],
   data() {
     return {
       data: null,
