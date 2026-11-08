@@ -1,10 +1,10 @@
 # IdP Reworked und Vaultwarden Reworked mit Samba-AD-Gruppenfilter
 
-Stand: 08.11.2026. Vaultwarden-Vorabversion **0.1.0-rc.9** mit
+Stand: 08.11.2026. Vaultwarden-Vorabversion **0.1.0** mit
 **IdP 0.1.0-rc.4** (Sicherheitsupdate: Keycloak 26.8.1, Vaultwarden 1.37.4,
 Adminzugang per Einmalticket, gebundene Gruppenregel). Der
 Veröffentlichungsstatus steht beim
-[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-rc.9).
+[GitHub-Release](https://github.com/Platypuschan/ns8-vaultwarden-reworked/releases/tag/0.1.0-0.1.0).
 
 **Update bestehender Installationen:** IdP muss mindestens rc.4 sein; falls
 er bereits rc.4 ist, genügt das Vaultwarden-Update. Andernfalls zuerst den
@@ -12,7 +12,7 @@ IdP, dann Vaultwarden aktualisieren.
 
 ```bash
 api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/idp-reworked:0.1.0-rc.4","instances":["idp-reworked1"]}'
-api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.9","instances":["vaultwarden-reworked1"]}'
+api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-0.1.0","instances":["vaultwarden-reworked1"]}'
 ```
 
 Wird Vaultwarden vor dem IdP aktualisiert, bricht das Update mit einem Hinweis
@@ -82,7 +82,7 @@ Verbindung von Keycloak zu Samba läuft über den bestehenden NS8-LDAP-Proxy.
 Beide Modulversionen fest pinnen. Die Runtimes werden in den Modulpaketen per Digest referenziert.
 
 ```bash
-VW_VERSION='0.1.0-rc.9'
+VW_VERSION='0.1.0-0.1.0'
 VW_IDP_VERSION='0.1.0-rc.4'
 VW_IDP_IMAGE="ghcr.io/platypuschan/idp-reworked:${VW_IDP_VERSION}"
 VW_APP_IMAGE="ghcr.io/platypuschan/vaultwarden-reworked:${VW_VERSION}"

@@ -36,7 +36,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           version="$(cat VERSION)"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || exit 64
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || exit 64
           base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           tag="candidate-${GITHUB_SHA:0:12}"
           printf '%s' "$GH_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -160,4 +160,6 @@ jobs:
             digest="$(skopeo inspect "docker://$source" --format '{{.Digest}}')"
             skopeo copy --preserve-digests "docker://${source%:*}@$digest" "docker://$destination"
           done
-          gh release create "$VERSION" --target "$GITHUB_SHA" --prerelease --title "vaultwarden-reworked $VERSION" --notes-file RELEASE_NOTES.md
+          # A version without -rc is a stable release; only release candidates are marked as pre-release
+          if [[ "$VERSION" == *-rc.* ]]; then flag=--prerelease; else flag=--latest; fi
+          gh release create "$VERSION" --target "$GITHUB_SHA" "$flag" --title "vaultwarden-reworked $VERSION" --notes-file RELEASE_NOTES.md
