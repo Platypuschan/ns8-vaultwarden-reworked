@@ -1,10 +1,11 @@
-Achte Vorabversion von Vaultwarden Reworked für NethServer 8. Behebt wiederholte SSO-Anmeldungen beim Öffnen bereits angemeldeter Apps. Benötigt weiterhin IdP 0.1.0-rc.4; kein IdP-Update gegenüber rc.7 erforderlich.
+Neunte Vorabversion von Vaultwarden Reworked für NethServer 8. Neue Verwaltungsoberfläche im NS8-Design; benötigt weiterhin IdP 0.1.0-rc.4 oder neuer.
 
-- Bereits angemeldete Geräte behalten ihre Vaultwarden-Sitzung unabhängig vom Ende der IdP-Sitzung. Der Tresor kann mit Masterpasswort oder Biometrie entsperrt werden, ohne erneut den Browser-SSO-Ablauf zu durchlaufen.
-- Neue Geräte und eine ausdrücklich abgemeldete App verlangen weiterhin SSO. Unter Android muss die Tresor-Timeout-Aktion **Sperren** sein. **Abmelden** beendet die Anmeldung absichtlich.
-- Das Modul setzt `SSO_AUTH_ONLY_NOT_SESSION=true` bei Installation, Konfiguration und Update automatisch. Bereits abgelaufene oder gelöschte Geräteanmeldungen benötigen nach dem Update einmalig erneut SSO.
-- AD-Gruppenentzug meldet bestehende Geräte weiterhin über den zweiminütigen Widerrufsdienst ab. Dieser Dienst ist jetzt für bestehende Gerätesitzungen maßgeblich: Bei ausgefallenem Dienst oder fehlgeschlagenen LDAP-/IdP-Abfragen ist kein zeitlich begrenzter Widerruf zugesichert. Warnungen zum Widerrufsstatus beachten.
+- Das Modul zeigt links ein Menü: **Einstellungen**, **Benutzer**, **Organisationen**, **Diagnose** und **Erweiterte Admin-Seite** (die Original-Adminseite von Vaultwarden), Deutsch und Englisch.
+- Einstellungen: General, Advanced, Global Duo, SMTP und Email 2FA. Vom Modul verwaltete Werte (SSO, Domain, Admin-Token ...) werden nicht angezeigt. SMTP wahlweise deaktiviert, über den Cluster-Smarthost (Absender und Rest frei) oder individuell; bestehende Installationen bleiben auf „individuell“.
+- Benutzer: 2FA entfernen, Sitzungen beenden, deaktivieren/aktivieren, SSO-Verknüpfung löschen, löschen, Rolle in Organisationen ändern, Clients neu synchronisieren. Organisationen: Liste und Löschen. Diagnose: Anzeige.
+- Enthält den Argon2-Fix für den internen ADMIN_TOKEN (keine gelbe Warnbox mehr).
+- Neue Runtime (Vaultwarden-Patch mit JSON-Ansichten für die Modulseiten); Update startet Vaultwarden neu.
 
-Für den Android-Test: nötigenfalls einmal SSO durchführen, Masterpasswort/Biometrie einrichten, Timeout-Aktion **Sperren** wählen, App sperren und später erneut öffnen. Es sollte nur das lokale Entsperren nötig sein. Die tatsächliche Android-/Biometrie-Oberfläche wurde noch nicht live geprüft.
+Nicht enthalten: Datenbank-Backup-Schaltfläche, Support-Konfigurations-Download, Yubikey-Gruppe, Einladungen. Feldbezeichnungen der Einstellungen sind englisch (von Vaultwarden). Die Seiten wurden auf einer Testinstanz (node2) benutzt; der SMTP-Modus „Smarthost“ mit Mailversand ist ungetestet.
 
 Keine Stable- oder Katalogfreigabe; Vorabversion für Testinstallationen.

@@ -1,6 +1,6 @@
 # ns8-vaultwarden-reworked
 
-Vaultwarden 1.37.4 für NethServer 8, Version **0.1.0-rc.8**: direkter Adminzugang im Anwendungsbereich des Cluster-Managers, SSO-only und administrative AD-Gruppenfreigabe über `idp-reworked` (ab 0.1.0-rc.4).
+Vaultwarden 1.37.4 für NethServer 8, Version **0.1.0-rc.9**: direkter Adminzugang im Anwendungsbereich des Cluster-Managers, SSO-only und administrative AD-Gruppenfreigabe über `idp-reworked` (ab 0.1.0-rc.4).
 
 Ab rc.3 wird ein lokaler IdP unter `pasta` automatisch über Podmans Host-Gateway erreicht. Die Zuordnung wird bei jedem Dienststart erneuert. [Netzwerkkorrektur und Update von rc.2](docs/NETWORK-FIX.md).
 
