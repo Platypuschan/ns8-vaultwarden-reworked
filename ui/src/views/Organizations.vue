@@ -53,7 +53,8 @@
                 <tr v-for="org in organizations" :key="org.id">
                   <td>
                     <strong>{{ org.name }}</strong>
-                    <span v-if="org.billingEmail"> ({{ org.billingEmail }})</span
+                    <span v-if="org.billingEmail">
+                      ({{ org.billingEmail }})</span
                     ><br />
                     <cv-tag kind="green" :label="org.id" />
                   </td>
@@ -68,7 +69,8 @@
                   <td>
                     {{ $t("organizations.collections") }}:
                     {{ org.collection_count }}<br />
-                    {{ $t("organizations.groups") }}: {{ org.group_count }}<br />
+                    {{ $t("organizations.groups") }}: {{ org.group_count
+                    }}<br />
                     {{ $t("organizations.events") }}: {{ org.event_count }}
                   </td>
                   <td>
@@ -101,7 +103,9 @@
         <p>{{ $t("organizations.confirm_delete", { name: confirm.name }) }}</p>
       </template>
       <template slot="secondary-button">{{ $t("common.cancel") }}</template>
-      <template slot="primary-button">{{ $t("organizations.delete") }}</template>
+      <template slot="primary-button">{{
+        $t("organizations.delete")
+      }}</template>
     </NsModal>
   </cv-grid>
 </template>
@@ -159,7 +163,9 @@ export default {
         await this.runPanelTask("manage-organization", {
           org_id: this.confirm.id,
         });
-        this.done = this.$t("organizations.deleted", { name: this.confirm.name });
+        this.done = this.$t("organizations.deleted", {
+          name: this.confirm.name,
+        });
         await this.load();
       } catch (e) {
         this.error = e.message;

@@ -1,7 +1,7 @@
 # Build the module page (Vue 2 / Carbon, like the other NS8 modules)
 FROM docker.io/library/node:24.20.0 AS ui
 WORKDIR /usr/src/ui
-COPY ui/package.json ui/yarn.lock ./
+COPY ui/package.json ui/yarn.lock ui/.yarnrc.yml ./
 RUN corepack enable && yarn install --immutable
 COPY ui/ ./
 RUN yarn build

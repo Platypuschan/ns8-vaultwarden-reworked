@@ -183,8 +183,6 @@ try {
     // Save, reload, see it again; reset restores the default
     const limit = app.getByLabel('Per-user attachment storage limit (KB)');
     await limit.fill('12345');
-    await shot(page, 'before-save');
-    console.log('Save disabled:', await app.getByRole('button', {name: 'Save'}).isDisabled(), 'value:', await limit.inputValue());
     await app.getByRole('button', {name: 'Save'}).click();
     await app.getByText('Settings saved.').waitFor();
     await shot(page, 'settings-saved');

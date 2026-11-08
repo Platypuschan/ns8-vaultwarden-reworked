@@ -38,7 +38,11 @@
           </div>
           <cv-skeleton-text v-if="loading" :paragraph="true" :line-count="10" />
           <template v-else>
-            <div v-for="section in sections" :key="section.title" class="section">
+            <div
+              v-for="section in sections"
+              :key="section.title"
+              class="section"
+            >
               <h4 class="mg-bottom">{{ section.title }}</h4>
               <table class="bx--data-table bx--data-table--compact">
                 <tbody>
@@ -97,53 +101,127 @@ export default {
       }
       const yes = (value) => this.$t(value ? "common.yes" : "common.no");
       const ok = (value) => (value ? "green" : "red");
-      const text = (value) => (value === "" || value == null ? "-" : String(value));
+      const text = (value) =>
+        value === "" || value == null ? "-" : String(value);
       const versionKind = (latest, current) =>
         latest === "-" ? "" : latest === current ? "green" : "blue";
       return [
         {
           title: this.$t("diagnostics.versions"),
           rows: [
-            { label: this.$t("diagnostics.server_version"), value: text(d.current_release) },
-            { label: this.$t("diagnostics.latest_release"), value: text(d.latest_release) },
-            { label: this.$t("diagnostics.latest_commit"), value: text(d.latest_commit) },
-            { label: this.$t("diagnostics.web_vault"), value: yes(d.web_vault_enabled), kind: ok(d.web_vault_enabled) },
-            { label: this.$t("diagnostics.web_vault_version"), value: text(d.active_web_release), kind: versionKind(d.latest_web_release, d.active_web_release) },
-            { label: this.$t("diagnostics.latest_web_vault"), value: text(d.latest_web_release) },
+            {
+              label: this.$t("diagnostics.server_version"),
+              value: text(d.current_release),
+            },
+            {
+              label: this.$t("diagnostics.latest_release"),
+              value: text(d.latest_release),
+            },
+            {
+              label: this.$t("diagnostics.latest_commit"),
+              value: text(d.latest_commit),
+            },
+            {
+              label: this.$t("diagnostics.web_vault"),
+              value: yes(d.web_vault_enabled),
+              kind: ok(d.web_vault_enabled),
+            },
+            {
+              label: this.$t("diagnostics.web_vault_version"),
+              value: text(d.active_web_release),
+              kind: versionKind(d.latest_web_release, d.active_web_release),
+            },
+            {
+              label: this.$t("diagnostics.latest_web_vault"),
+              value: text(d.latest_web_release),
+            },
           ],
         },
         {
           title: this.$t("diagnostics.environment"),
           rows: [
-            { label: this.$t("diagnostics.container"), value: yes(d.running_within_container) },
-            { label: this.$t("diagnostics.base_image"), value: text(d.container_base_image) },
-            { label: this.$t("diagnostics.arch"), value: text(d.host_arch + " / " + d.host_os) },
-            { label: this.$t("diagnostics.database"), value: text(d.db_type + " " + d.db_version) },
+            {
+              label: this.$t("diagnostics.container"),
+              value: yes(d.running_within_container),
+            },
+            {
+              label: this.$t("diagnostics.base_image"),
+              value: text(d.container_base_image),
+            },
+            {
+              label: this.$t("diagnostics.arch"),
+              value: text(d.host_arch + " / " + d.host_os),
+            },
+            {
+              label: this.$t("diagnostics.database"),
+              value: text(d.db_type + " " + d.db_version),
+            },
             { label: this.$t("diagnostics.timezone"), value: text(d.tz_env) },
-            { label: this.$t("diagnostics.config_file"), value: text(d.config_file_status) },
-            { label: this.$t("diagnostics.overrides"), value: text(d.overrides) },
-            { label: this.$t("diagnostics.template_overrides"), value: text(d.template_overrides) },
-            { label: this.$t("diagnostics.invalid_env"), value: text(d.invalid_env_vars) },
-            { label: this.$t("diagnostics.invalid_flags"), value: text((d.invalid_feature_flags || []).join(", ")) },
+            {
+              label: this.$t("diagnostics.config_file"),
+              value: text(d.config_file_status),
+            },
+            {
+              label: this.$t("diagnostics.overrides"),
+              value: text(d.overrides),
+            },
+            {
+              label: this.$t("diagnostics.template_overrides"),
+              value: text(d.template_overrides),
+            },
+            {
+              label: this.$t("diagnostics.invalid_env"),
+              value: text(d.invalid_env_vars),
+            },
+            {
+              label: this.$t("diagnostics.invalid_flags"),
+              value: text((d.invalid_feature_flags || []).join(", ")),
+            },
           ],
         },
         {
           title: this.$t("diagnostics.network"),
           rows: [
-            { label: this.$t("diagnostics.internet"), value: yes(d.has_http_access), kind: ok(d.has_http_access) },
+            {
+              label: this.$t("diagnostics.internet"),
+              value: yes(d.has_http_access),
+              kind: ok(d.has_http_access),
+            },
             { label: this.$t("diagnostics.dns"), value: text(d.dns_resolved) },
             { label: this.$t("diagnostics.proxy"), value: yes(d.uses_proxy) },
-            { label: this.$t("diagnostics.websocket"), value: yes(d.enable_websocket), kind: ok(d.enable_websocket) },
-            { label: this.$t("diagnostics.ip_header"), value: d.ip_header_exists ? yes(d.ip_header_match) : this.$t("diagnostics.ip_header_missing"), kind: d.ip_header_exists ? ok(d.ip_header_match) : "red" },
-            { label: this.$t("diagnostics.ip_header_received"), value: text(d.ip_header_name) },
-            { label: this.$t("diagnostics.ip_header_configured"), value: text(d.ip_header_config) },
+            {
+              label: this.$t("diagnostics.websocket"),
+              value: yes(d.enable_websocket),
+              kind: ok(d.enable_websocket),
+            },
+            {
+              label: this.$t("diagnostics.ip_header"),
+              value: d.ip_header_exists
+                ? yes(d.ip_header_match)
+                : this.$t("diagnostics.ip_header_missing"),
+              kind: d.ip_header_exists ? ok(d.ip_header_match) : "red",
+            },
+            {
+              label: this.$t("diagnostics.ip_header_received"),
+              value: text(d.ip_header_name),
+            },
+            {
+              label: this.$t("diagnostics.ip_header_configured"),
+              value: text(d.ip_header_config),
+            },
           ],
         },
         {
           title: this.$t("diagnostics.time"),
           rows: [
-            { label: this.$t("diagnostics.server_time"), value: text(d.server_time) },
-            { label: this.$t("diagnostics.server_time_local"), value: text(d.server_time_local) },
+            {
+              label: this.$t("diagnostics.server_time"),
+              value: text(d.server_time),
+            },
+            {
+              label: this.$t("diagnostics.server_time_local"),
+              value: text(d.server_time_local),
+            },
             { label: this.$t("diagnostics.ntp_time"), value: text(d.ntp_time) },
           ],
         },

@@ -30,7 +30,11 @@
     </cv-row>
     <cv-row>
       <cv-column>
-        <cv-skeleton-text v-if="loading.load" :paragraph="true" :line-count="8" />
+        <cv-skeleton-text
+          v-if="loading.load"
+          :paragraph="true"
+          :line-count="8"
+        />
         <cv-tile v-else light>
           <p class="intro">{{ $t("settings.intro") }}</p>
           <cv-accordion class="groups">
@@ -54,13 +58,17 @@
                     <cv-select-option
                       value="smarthost"
                       :disabled="!smarthostAvailable"
-                      >{{ $t("settings.smtp_mode_smarthost") }}</cv-select-option
+                      >{{
+                        $t("settings.smtp_mode_smarthost")
+                      }}</cv-select-option
                     >
                     <cv-select-option value="custom">{{
                       $t("settings.smtp_mode_custom")
                     }}</cv-select-option>
                   </cv-select>
-                  <p class="help">{{ $t("settings.smtp_mode_" + smtpMode + "_help") }}</p>
+                  <p class="help">
+                    {{ $t("settings.smtp_mode_" + smtpMode + "_help") }}
+                  </p>
                   <p v-if="!smarthostAvailable" class="help">
                     {{ $t("settings.no_smarthost") }}
                   </p>
@@ -81,7 +89,9 @@
                   v-model="values[element.name]"
                 />
                 <div
-                  v-if="group.group === 'smtp' && appliedSmtpMode !== 'disabled'"
+                  v-if="
+                    group.group === 'smtp' && appliedSmtpMode !== 'disabled'
+                  "
                   class="smtp-test"
                 >
                   <cv-text-input

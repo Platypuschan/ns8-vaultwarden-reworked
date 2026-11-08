@@ -183,10 +183,18 @@
           {{ $t("users.change_role_for", { user: role.email, org: role.org }) }}
         </p>
         <cv-select :label="$t('users.role')" v-model="role.value">
-          <cv-select-option value="user">{{ $t("users.role_user") }}</cv-select-option>
-          <cv-select-option value="manager">{{ $t("users.role_manager") }}</cv-select-option>
-          <cv-select-option value="admin">{{ $t("users.role_admin") }}</cv-select-option>
-          <cv-select-option value="owner">{{ $t("users.role_owner") }}</cv-select-option>
+          <cv-select-option value="user">{{
+            $t("users.role_user")
+          }}</cv-select-option>
+          <cv-select-option value="manager">{{
+            $t("users.role_manager")
+          }}</cv-select-option>
+          <cv-select-option value="admin">{{
+            $t("users.role_admin")
+          }}</cv-select-option>
+          <cv-select-option value="owner">{{
+            $t("users.role_owner")
+          }}</cv-select-option>
         </cv-select>
       </template>
       <template slot="secondary-button">{{ $t("common.cancel") }}</template>
@@ -213,7 +221,14 @@ export default {
       error: "",
       done: "",
       confirm: { open: false, title: "", text: "", operation: "", user: null },
-      role: { open: false, email: "", org: "", value: "user", user: "", id: "" },
+      role: {
+        open: false,
+        email: "",
+        org: "",
+        value: "user",
+        user: "",
+        id: "",
+      },
     };
   },
   computed: {

@@ -31,7 +31,11 @@
     <cv-row>
       <cv-column>
         <p class="mg-bottom">{{ $t("admin.help") }}</p>
-        <cv-skeleton-text v-if="loading && !embedded" :paragraph="true" :line-count="4" />
+        <cv-skeleton-text
+          v-if="loading && !embedded"
+          :paragraph="true"
+          :line-count="4"
+        />
         <div v-if="!embedded && !loading" class="mg-bottom">
           <NsButton kind="primary" @click="openInTab">{{
             $t("admin.open_tab")
@@ -122,13 +126,19 @@ export default {
         const url = this.destination(result);
         const embed =
           !tab &&
-          (result.frame_ancestors || []).includes(window.parent.location.origin);
+          (result.frame_ancestors || []).includes(
+            window.parent.location.origin
+          );
         if (!embed && !tab) {
           this.embedded = false;
           this.loading = false;
           return;
         }
-        this.submit(url, result.ticket, embed ? this.$refs.frame.name : TAB_NAME);
+        this.submit(
+          url,
+          result.ticket,
+          embed ? this.$refs.frame.name : TAB_NAME
+        );
         this.embedded = embed;
         this.tabOpen = !embed;
         this.startRenewal(result.session_seconds || 120);
@@ -169,7 +179,9 @@ export default {
             method: "POST",
             mode: "no-cors",
             credentials: "omit",
-            body: new URLSearchParams({ token: result.ticket + ":" + this.handle }),
+            body: new URLSearchParams({
+              token: result.ticket + ":" + this.handle,
+            }),
           }).catch(() => {});
         } catch (e) {
           clearInterval(this.renewal);
