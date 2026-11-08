@@ -1,6 +1,100 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "vulnerabilityAlerts": {
+    "schedule": ["at any time"]
+  },
+  "ignorePaths": ["**/node_modules/**", "ui/dist/**", "prototype/idp/**", "tests/historical_idp/**"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Node.js builder image named in CI workflow run lines",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["docker\\.io/library/node:(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "docker.io/library/node",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Anything that changes the shipped module image needs a fresh immutable module version",
+      "matchManagers": ["npm", "dockerfile", "custom.regex"],
+      "matchFileNames": ["ui/**", "Containerfile"],
+      "bumpVersions": [
+        {
+          "name": "Raise the module version",
+          "filePatterns": ["VERSION"],
+          "matchStrings": ["^(?<version>\\d+\\.\\d+\\.\\d+)\\s*$"],
+          "bumpType": "patch"
+        }
+      ]
+    },
+    {
+      "description": "One Node.js PR for module build, UI Containerfile and CI; stay on the current major (Corepack/yarn 4)",
+      "matchDepNames": ["node", "docker.io/library/node"],
+      "groupName": "Node.js",
+      "bumpVersions": [
+        {
+          "name": "Raise the module version",
+          "filePatterns": ["VERSION"],
+          "matchStrings": ["^(?<version>\\d+\\.\\d+\\.\\d+)\\s*$"],
+          "bumpType": "patch"
+        }
+      ]
+    },
+    {
+      "matchDepNames": ["node", "docker.io/library/node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "UI patch updates: one grouped PR, merged automatically after lint+build and unit tests are green and the release is 7 days old",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "UI dependencies (patch)",
+      "minimumReleaseAge": "7 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "ignoreTests": false
+    },
+    {
+      "description": "UI minor updates: one grouped PR, manual review",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "UI dependencies (minor)",
+      "minimumReleaseAge": "3 days",
+      "automerge": false
+    },
+    {
+      "description": "Majors of the Vue 2 / Carbon 10 stack (Vue 3, Vite 8, ESLint 10, ...) are migrations, not routine updates",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Patched Vaultwarden runtime: Rust builder and upstream base image are tied to the source commit, the patch, ns8_admin.rs and runtime-cache.json. Only on request via the dashboard, never automatic; the PR needs a runtime rebuild and review.",
+      "matchFileNames": ["prototype/vaultwarden/**"],
+      "dependencyDashboardApproval": true,
+      "automerge": false,
+      "labels": ["dependencies", "runtime"]
+    },
+    {
+      "description": "GitHub Actions are not part of the module image; no auto-merge because release workflows are not exercised by PR checks",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "automerge": false
+    },
+    {
+      "description": "Runner images and the NS8 reusable workflow follow the test matrix; majors need review",
+      "matchDepNames": ["ubuntu", "NethServer/ns8-github-actions"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
   ]
 }
