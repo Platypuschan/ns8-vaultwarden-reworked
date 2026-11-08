@@ -215,21 +215,23 @@ Every NS8 administrator can open the admin page
     Should Contain    ${out}    Module self-administration: admin login denied
 
 Native admin pages use the real runtime and the cluster smarthost
-    ${users} =    Run task    module/${APP}/query-panel-data    {"section":"users"}
-    Should Be Equal    ${users['section']}    users
     ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"users"}'
     Should Not Contain    ${text}    securityStamp
     Should Not Contain    ${text}    privateKey
-    ${orgs} =    Run task    module/${APP}/query-panel-data    {"section":"organizations"}
+    ${users} =    Evaluate    json.loads($text)    modules=json
+    Should Be Equal    ${users['section']}    users
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"organizations"}'
+    ${orgs} =    Evaluate    json.loads($text)    modules=json
     Should Be Equal    ${orgs['section']}    organizations
-    ${diag} =    Run task    module/${APP}/query-panel-data    {"section":"diagnostics"}
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"diagnostics"}'
+    ${diag} =    Evaluate    json.loads($text)    modules=json
     Should Not Be Empty    ${diag['data']['current_release']}
-    ${settings} =    Run task    module/${APP}/query-panel-data    {"section":"settings"}
-    ${groups} =    Evaluate    [g['group'] for g in $settings['data']]
-    Should Be Equal    ${groups}    ${{['settings', 'advanced', 'duo', 'smtp', 'email_2fa']}}
     ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"settings"}'
     Should Not Contain    ${text}    sso_client_secret
     Should Not Contain    ${text}    "admin_token"
+    ${settings} =    Evaluate    json.loads($text)    modules=json
+    ${groups} =    Evaluate    [g['group'] for g in $settings['data']]
+    Should Be Equal    ${groups}    ${{['settings', 'advanced', 'duo', 'smtp', 'email_2fa']}}
     # Normal settings are saved; module managed ones are refused
     Run task    module/${APP}/set-panel-settings    {"values":{"org_creation_users":"admin@example.test"}}
     ${rc} =    Execute Command    api-cli run module/${APP}/set-panel-settings --data '{"values":{"sso_only":false}}'    return_rc=True    return_stdout=False
