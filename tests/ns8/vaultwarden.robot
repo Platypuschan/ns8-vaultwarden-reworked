@@ -19,6 +19,20 @@ App is healthy
     ${rc} =    Execute Command    curl -kfsS --resolve ${APP_HOST}:443:127.0.0.1 https://${APP_HOST}/alive    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
 
+Roll back to
+    [Arguments]    ${image}
+    ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    ${db_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sh -c 'cat /data/rollback-marker'
+    Run task    cluster/update-module    {"module_url":"${image}","instances":["${APP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    180s    3s    App is healthy
+    ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    ${db_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sh -c 'cat /data/rollback-marker'
+    Should Be Equal    ${key_before.strip()}    ${key_after.strip()}
+    Should Be Equal    ${db_before.strip()}    ${db_after.strip()}
+    Policy is enforced
+    ${rc} =    Execute Command    runagent -m ${APP} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
 Host is healthy
     [Arguments]    ${host}
     ${rc} =    Execute Command    curl -kfsS --resolve ${host}:443:127.0.0.1 https://${host}/alive    return_rc=True    return_stdout=False
@@ -145,6 +159,15 @@ Upgrade configured rc.7 to persistent device sessions
     Policy is enforced
     ${rc} =    Execute Command    runagent -m ${APP} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+
+Rollback to the previous releases and forward again
+    # Downgrades are not supported by NS8 itself; the data and the access policy must survive them anyway
+    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sh -c 'echo rollback-marker-4712 > /data/rollback-marker'
+    Roll back to    ghcr.io/platypuschan/vaultwarden-reworked:0.1.0
+    Roll back to    ghcr.io/platypuschan/vaultwarden-reworked:0.1.0-rc.7
+    Roll back to    ${IMAGE_URL}
+    ${value} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app printenv SSO_AUTH_ONLY_NOT_SESSION
+    Should Be Equal    ${value.strip()}    true
 
 Fresh installation of corrected package
     ${out}    ${rc} =    Execute Command    add-module ${IMAGE_URL} 1    return_rc=True
