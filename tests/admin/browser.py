@@ -17,10 +17,13 @@ import tempfile
 import threading
 import time
 import sys
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'imageroot/pypkg'))
 from vaultwarden_admin import issue_ticket
+import vaultwarden_panel as panel
+import vaultwarden_revoke as revoke
 
 image = os.environ.get('VW_RUNTIME_IMAGE', 'localhost/vaultwarden-reworked-server:admin-ui')
 name = 'vw-admin-browser-' + secrets.token_hex(5)
@@ -29,6 +32,12 @@ token = secrets.token_urlsafe(48)
 SESSION_SECONDS = 12
 tickets = None
 revoked = set()
+# Results of module actions wait here until the cluster manager page asks
+events = []
+events_lock = threading.Lock()
+STATE_DIR = None
+MIME = {'.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png',
+    '.svg': 'image/svg+xml', '.html': 'text/html'}
 
 
 def command(*args):
@@ -69,6 +78,67 @@ def ready():
     raise RuntimeError('Browser fixture runtime failed to start')
 
 
+def open_admin(role):
+    """Fake open-admin: real tickets, or the refusal NS8 gives a reader."""
+    if role == 'reader' or role in revoked:
+        return None
+    # role=tab: an installation whose cluster manager may not embed the page
+    ancestors = [] if role == 'tab' else [base, suffix_cluster]
+    destination = suffix_vault if role == 'public-suffix' else vault
+    # owner1: an installation whose revocation timer keeps failing
+    revocation = {'state': 'warning' if role == 'owner1' else 'ok'}
+    return {'url': destination + '/admin/', 'ticket': issue_ticket(role, tickets),
+        'session_seconds': SESSION_SECONDS, 'frame_ancestors': ancestors, 'revocation': revocation}
+
+
+def run_action(role, action, data):
+    """The module actions, with the real panel code on the real runtime."""
+    connection = revoke.AdminAPI(f'http://127.0.0.1:{app_port}', token, state_dir=STATE_DIR)
+    if action == 'get-name':
+        return {'name': 'vaultwarden-reworked1'}
+    if action == 'get-configuration':
+        return {'host': 'vault.example.test', 'smtp_mode': 'custom', 'smarthost_available': False,
+            'revocation': {'state': 'warning' if role == 'owner1' else 'ok'}}
+    if action == 'open-admin':
+        return open_admin(role)
+    if action == 'query-panel-data':
+        return {'section': data['section'], 'data': panel.get_data(data['section'], connection)}
+    if action == 'set-panel-settings':
+        panel.save_settings(data['values'], connection)
+        return {'saved': True}
+    if action == 'reset-panel-settings':
+        panel.reset_settings(connection)
+        return {'reset': True}
+    if action == 'manage-user':
+        panel.manage_user(data['operation'], data.get('user_id'), data.get('role'), data.get('org_id'), connection)
+        return {'done': True}
+    if action == 'manage-organization':
+        panel.delete_organization(data['org_id'], connection)
+        return {'done': True}
+    if action == 'test-smtp':
+        panel.test_smtp(data['email'], connection)
+        return {'sent': True}
+    raise ValueError('Unknown action ' + action)
+
+
+def queue_task(role, request):
+    # A task runs after the request returned, as in the cluster manager
+    threading.Thread(target=finish_task, args=(role, request), daemon=True).start()
+
+
+def finish_task(role, request):
+    action, event_id = request['action'], request['extra']['eventId']
+    try:
+        output = run_action(role, action, request.get('data') or {})
+        event = [f'{action}-completed-{event_id}', [None, {'output': output}]] if output is not None else \
+            [f'{action}-aborted-{event_id}', [None, {'action': action}]]
+    except (ValueError, revoke.RevokeError) as error:
+        message = getattr(error, 'detail', '') or str(error)
+        event = [f'{action}-validation-failed-{event_id}', [[{'message': message}]]]
+    with events_lock:
+        events.append({'name': event[0], 'args': event[1]})
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -90,41 +160,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/test-control':
             self.send(200, b'<!doctype html><title>Test control</title>')
         elif self.path.startswith('/cluster-admin/?'):
-            role = self.path.split('role=', 1)[-1]
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            role = query.get('role', ['owner1'])[0]
+            page = query.get('page', ['admin'])[0]
             body = '''<!doctype html><script>
-            location.hash='#/apps/vaultwarden-reworked1/settings';
+            location.hash='#/apps/vaultwarden-reworked1?page=PAGE';
             const events=new Map();
-            const root={$once:(name,fn)=>events.set(name,fn),$off:(name)=>events.delete(name)};
+            // What the cluster manager offers the module page
+            const root={apiUrl:'/test-api/ROLE',$on(){},$emit(){},
+              $once:(name,fn)=>events.set(name,fn),$off:(name,fn)=>{if(!fn||events.get(name)===fn) events.delete(name)}};
             window.notifications=[];
-            window.core={$root:root,$children:[{createNotification:n=>window.notifications.push(n),
-            createModuleTaskForApp:async (module,request)=>{
-              const response=await fetch('/test-task?role=ROLE',{method:'POST'});
-              const event=`open-admin-${response.ok?'completed':'aborted'}-${request.extra.eventId}`;
-              const fn=events.get(event); if(fn) fn(null,{output:response.ok?await response.json():null});
-            }}]};</script><iframe style="position:absolute;top:48px;left:256px;width:1000px;height:700px;border:none" src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role)
+            window.core={$root:root,$children:[],
+              $route:{path:'/apps/vaultwarden-reworked1',fullPath:'/apps/vaultwarden-reworked1?page=PAGE'},
+              $router:{replace(){},push(){}}};
+            setInterval(async()=>{
+              const answer=await fetch('/test-api/events'); 
+              for(const event of await answer.json()){
+                const fn=events.get(event.name);
+                if(fn){events.delete(event.name); fn(...event.args);}
+              }
+            },100);</script><iframe style="position:absolute;top:48px;left:256px;width:1000px;height:700px;border:none" src="/cluster-admin/apps/vaultwarden-reworked1/index.html"></iframe>'''.replace('ROLE', role).replace('PAGE', page)
             self.send(200, body.encode())
-        elif self.path.startswith('/cluster-admin/apps/') and self.path.endswith('/index.html'):
-            self.send(200, (ROOT / 'ui/index.html').read_bytes())
-        elif self.path.startswith('/cluster-admin/apps/') and self.path.endswith('/admin.js'):
-            self.send(200, (ROOT / 'ui/admin.js').read_bytes(), 'application/javascript')
+        elif self.path == '/test-api/events':
+            with events_lock:
+                pending, events[:] = list(events), []
+            self.send(200, json.dumps(pending).encode(), 'application/json')
+        elif self.path.startswith('/cluster-admin/css/'):
+            # The cluster manager provides the Carbon styles; use the ones of the build tree if present
+            carbon = ROOT / 'ui/node_modules/carbon-components/css/carbon-components.min.css'
+            layout = b'\n.app-content > .bx--grid { margin-left: 16rem; width: auto; }\n'
+            self.send(200, (carbon.read_bytes() if carbon.is_file() else b'') + layout, 'text/css')
+        elif self.path.startswith('/cluster-admin/apps/'):
+            name = urllib.parse.urlsplit(self.path).path.split('/', 4)[-1] or 'index.html'
+            target = (ROOT / 'ui/dist' / name).resolve()
+            if (ROOT / 'ui/dist').resolve() in target.parents and target.is_file():
+                self.send(200, target.read_bytes(), MIME.get(target.suffix, 'application/octet-stream'))
+            else:
+                self.send(404, b'not found')
         else:
             self.proxy()
 
     def do_POST(self):
-        if self.path.startswith('/test-task?'):
-            role = self.path.split('role=', 1)[-1]
-            if role == 'reader' or role in revoked:
-                # NS8 refuses open-admin: no ticket
-                self.send(403, b'{}', 'application/json')
-            else:
-                # role=tab: an installation whose cluster manager may not embed the page
-                ancestors = [] if role == 'tab' else [base, suffix_cluster]
-                destination = suffix_vault if role == 'public-suffix' else vault
-                # owner1: an installation whose revocation timer keeps failing
-                revocation = {'state': 'warning' if role == 'owner1' else 'ok'}
-                self.send(200, json.dumps({'url': destination + '/admin/',
-                    'ticket': issue_ticket(role, tickets), 'session_seconds': SESSION_SECONDS,
-                    'frame_ancestors': ancestors, 'revocation': revocation}).encode(), 'application/json')
+        if self.path.startswith('/test-api/') and self.path.endswith('/tasks'):
+            role = self.path.split('/')[2]
+            length = int(self.headers.get('Content-Length', '0'))
+            request = json.loads(self.rfile.read(length) or b'{}')
+            queue_task(role, request)
+            self.send(200, b'{}', 'application/json')
         elif self.path.startswith('/test-revoke?'):
             revoked.add(self.path.split('role=', 1)[-1])
             self.send(200, b'{}', 'application/json')
@@ -162,6 +244,7 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
         '-out', str(cert), '-days', '1', '-subj', '/CN=vault.example.test',
         '-addext', 'subjectAltName=DNS:cluster.example.test,DNS:vault.example.test,DNS:cluster.two.co.uk,DNS:vault.one.co.uk')
     (path / 'data').mkdir()
+    STATE_DIR = str(path)
     tickets = str(path / 'tickets')
     os.mkdir(tickets, 0o700)
     server = http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)
@@ -182,6 +265,10 @@ with tempfile.TemporaryDirectory(prefix='vw-admin-browser-') as directory:
             '-e', 'ADMIN_TOKEN=' + token, '-e', 'DOMAIN=' + vault,
             '-e', 'ALLOWED_IFRAME_ANCESTORS=' + base + ' ' + suffix_cluster, image)
         ready()
+        # Two accounts for the user page (an admin invitation creates them without mail)
+        worker = revoke.AdminAPI(f'http://127.0.0.1:{app_port}', token, state_dir=STATE_DIR)
+        for address in ('one@example.test', 'two@example.test'):
+            worker.request('POST', '/admin/invite', {'email': address})
         subprocess.run(['node', str(ROOT / 'tests/admin/browser.mjs')], check=True,
             env=dict(os.environ, TEST_BASE=base))
     finally:

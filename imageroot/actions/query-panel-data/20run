@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import json
+import sys
+import vaultwarden_panel as panel
+
+data = json.load(sys.stdin)
+
+
+def run():
+    json.dump({'section': data['section'], 'data': panel.get_data(data['section'])}, sys.stdout)
+
+
+panel.guarded(run, 'section')

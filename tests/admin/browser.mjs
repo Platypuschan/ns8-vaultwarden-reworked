@@ -5,6 +5,10 @@ const browser = await chromium.launch({headless: true,
 const base = process.env.TEST_BASE;
 const vault = base.replace('cluster.example.test', 'vault.example.test');
 const cluster = base + '/cluster-admin/';
+// Optional: VW_SCREENSHOTS=<directory> keeps a picture of each module page
+async function shot(page, name) {
+  if (process.env.VW_SCREENSHOTS) await page.screenshot({path: `${process.env.VW_SCREENSHOTS}/${name}.png`});
+}
 
 // The admin page must open in the application frame, the cluster manager stays.
 async function adminFrame(page) {
@@ -42,14 +46,15 @@ try {
   console.log('Browser SSO link: no email step before the IdP');
   await direct.close();
 
-  for (const role of ['owner1', 'owner2', 'reader', 'tab', 'public-suffix']) {
+  for (const role of process.env.VW_ONLY === 'panel' ? [] : ['owner1', 'owner2', 'reader', 'tab', 'public-suffix']) {
     const context = await browser.newContext({ignoreHTTPSErrors: true});
     const page = await context.newPage();
     const manager = role === 'public-suffix' ? cluster.replace('cluster.example.test', 'cluster.two.co.uk') : cluster;
-    await page.goto(manager + '?role=' + role);
+    await page.goto(manager + '?page=admin&role=' + role);
     if (role === 'reader') {
-      const frame = page.frameLocator('iframe').first();
-      await frame.locator('#status').filter({hasText: 'NS8-Administrator'}).waitFor();
+      const application = page.frameLocator('iframe').first();
+      await application.locator('.bx--inline-notification--error').waitFor();
+      assert(!page.frames().some(f => f.url() === vault + '/admin/'), 'a reader must not get the admin page');
       assert.equal(new URL(page.url()).hostname, 'cluster.example.test');
       console.log('Browser reader: no admin navigation');
     } else if (role === 'public-suffix') {
@@ -65,15 +70,15 @@ try {
       }
       assert(embedded);
       await embedded.locator('#config-form').waitFor();
-      assert(!(await application.locator('#open').isVisible()));
+      assert(!(await application.getByRole('button', {name: 'Open in new tab'}).isVisible()));
       const blocked = await embedded.evaluate(async () => (await fetch('/admin/users')).status);
       assert.equal(blocked, 403, 'Strict cookie must be unavailable across two distinct co.uk sites');
       assert(page.url().startsWith(manager));
       console.log('Browser public suffix: embedded without fallback, cross-site Strict cookie rejected');
     } else if (role === 'tab') {
       const frame = page.frameLocator('iframe').first();
-      await frame.locator('#status').filter({hasText: 'neuem Tab'}).waitFor();
-      const [tab] = await Promise.all([context.waitForEvent('page'), frame.locator('#open').click()]);
+      await frame.getByRole('button', {name: 'Open in new tab'}).waitFor();
+      const [tab] = await Promise.all([context.waitForEvent('page'), frame.getByRole('button', {name: 'Open in new tab'}).click()]);
       await tab.waitForURL(vault + '/admin/', {timeout: 30000});
       await tab.locator('#config-form').waitFor();
       assert(page.url().startsWith(cluster));
@@ -84,21 +89,18 @@ try {
     } else {
       let frame = await adminFrame(page);
       assert.equal(context.pages().length, 1);
-      // Only the admin frame, over the whole application area
+      // The admin page sits in the module page next to the NS8 menu
       const application = page.frameLocator('iframe').first();
-      for (const selector of ['h1', '#status', '#open'])
-        assert(!(await application.locator(selector).isVisible()), selector + ' must be hidden');
-      assert(!(await application.locator('#warning').isVisible()), 'no warning bar over the admin frame');
-      const notices = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+      await application.locator('.bx--side-nav__link-text').filter({hasText: 'Settings'}).first().waitFor();
+      const admin = await application.locator('iframe[name=vaultwarden-admin-frame]').boundingBox();
+      assert(admin.width > 600 && admin.height > 400, `admin frame ${admin.width}x${admin.height} too small`);
+      await shot(page, 'advanced-admin-' + role);
+      const warning = application.locator('.bx--inline-notification--warning');
       if (role === 'owner1') {
-        assert(notices.some(n => n.startsWith('warning:') && n.includes('Zugriffswiderruf')), notices.join());
+        await warning.filter({hasText: 'access revocation is disturbed'}).waitFor();
       } else {
-        assert.deepEqual(notices, []);
+        assert.equal(await warning.count(), 0, 'no warning expected');
       }
-      const area = await page.locator('iframe').first().boundingBox();
-      const admin = await application.locator('#admin-frame').boundingBox();
-      assert(Math.abs(admin.width - area.width) <= 1 && Math.abs(admin.height - area.height) <= 1,
-        `admin frame ${admin.width}x${admin.height} must fill ${area.width}x${area.height}`);
       const cookies = await context.cookies(vault + '/admin/');
       assert(cookies.some(cookie => cookie.name === 'NS8_ADMIN' && cookie.httpOnly && cookie.secure));
       assert(await frame.locator('#input_sso_enabled').isDisabled());
@@ -148,12 +150,94 @@ try {
         await control.close();
         await page.waitForTimeout(20000);
         assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 403);
-        const ended = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
-        assert(ended.some(n => n.startsWith('warning:') && n.includes('nicht verlängert')), ended.join());
+        await application.locator('.bx--inline-notification--warning').filter({hasText: 'cannot be renewed'}).waitFor();
         console.log('Browser owner2: session renewed while open, ended after the NS8 right was revoked');
       }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');
     }
+    await context.close();
+  }
+
+  // The native pages, against the real runtime through the module actions
+  {
+    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport: {width: 1500, height: 1100}});
+    const page = await context.newPage();
+    const open = async (name, title) => {
+      await page.goto(cluster + '?page=' + name + '&role=owner2');
+      const app = page.frameLocator('iframe').first();
+      await app.locator('h2').filter({hasText: title}).waitFor();
+      return app;
+    };
+    const settled = app => app.locator('.bx--skeleton__text').first().waitFor({state: 'detached'}).catch(() => {});
+    const confirm = app => app.locator('.bx--modal.is-visible').getByRole('button', {name: /^(Confirm|Reset to defaults|Delete organization)$/}).click();
+    let app = await open('settings', 'Settings');
+    await settled(app);
+    await app.getByText('General settings').first().waitFor();
+    // Managed values (single sign-on, domain, admin token) are not offered at all
+    const text = await app.locator('body').innerText();
+    for (const hidden of ['OpenID Connect', 'SSO', 'Admin token', 'Domain URL', 'Yubikey'])
+      assert(!text.includes(hidden), hidden + ' must not be offered');
+    assert.deepEqual((await app.locator('.bx--accordion__title').allInnerTexts()), [
+      'General settings', 'Advanced settings', 'Global Duo settings (users can override them)',
+      'SMTP email settings', 'Email 2FA settings']);
+    // Save, reload, see it again; reset restores the default
+    const limit = app.getByLabel('Per-user attachment storage limit (KB)');
+    await limit.fill('12345');
+    await app.getByRole('button', {name: 'Save'}).click();
+    await app.getByText('Settings saved.').waitFor();
+    await shot(page, 'settings-saved');
+    app = await open('settings', 'Settings');
+    await settled(app);
+    assert.equal(await app.getByLabel('Per-user attachment storage limit (KB)').inputValue(), '12345');
+    await app.getByRole('button', {name: 'Reset to defaults'}).click();
+    await confirm(app);
+    await app.getByText('Settings reset to defaults.').waitFor();
+    assert.equal(await app.getByLabel('Per-user attachment storage limit (KB)').inputValue(), '');
+    // Mail mode choice: off, cluster smarthost (unavailable here), custom
+    await app.getByText('SMTP email settings').click();
+    const modes = await app.locator('select').first().locator('option').allInnerTexts();
+    assert.deepEqual(modes, ['Email disabled', 'Cluster smarthost (the rest custom)', 'Custom']);
+    console.log('Browser settings: managed fields hidden, save/reset against the real runtime');
+
+    // A link in the cluster manager changes only the address: the frame has to follow
+    for (const [name, title] of [['users', 'Users'], ['organizations', 'Organizations'], ['settings', 'Settings']]) {
+      await page.evaluate(n => { location.hash = '#/apps/vaultwarden-reworked1?page=' + n; }, name);
+      await app.locator('h2').filter({hasText: title}).waitFor({timeout: 10000});
+    }
+    console.log('Browser navigation: the frame follows the address of the cluster manager');
+    app = await open('users', 'Users');
+    await settled(app);
+    const row = address => app.locator('tr').filter({hasText: address});
+    await row('one@example.test').waitFor();
+    await shot(page, 'users');
+    // The actions of a user stand one below the other
+    const boxes = [];
+    for (const name of ['Disable', 'Delete user'])
+      boxes.push(await row('one@example.test').getByRole('button', {name}).boundingBox());
+    assert(Math.abs(boxes[0].x - boxes[1].x) <= 1 && boxes[1].y > boxes[0].y + boxes[0].height - 1, 'actions must be stacked');
+    await row('one@example.test').getByRole('button', {name: 'Disable'}).click();
+    await confirm(app);
+    await row('one@example.test').locator('.bx--tag').filter({hasText: 'Disabled'}).waitFor();
+    await row('one@example.test').getByRole('button', {name: 'Enable'}).click();
+    await confirm(app);
+    await row('one@example.test').getByRole('button', {name: 'Disable'}).waitFor();
+    await row('one@example.test').getByRole('button', {name: 'Delete user'}).click();
+    await confirm(app);
+    await row('one@example.test').waitFor({state: 'detached'});
+    await row('two@example.test').waitFor();
+    console.log('Browser users: disable, enable and delete against the real runtime');
+
+    app = await open('organizations', 'Organizations');
+    await settled(app);
+    await app.getByText('No organizations.').waitFor();
+    await shot(page, 'organizations');
+
+    app = await open('diagnostics', 'Diagnostics');
+    await settled(app);
+    await app.getByText('Server version').waitFor();
+    await app.getByText('Server time (UTC)').waitFor();
+    await shot(page, 'diagnostics');
+    console.log('Browser diagnostics: versions, network and time shown');
     await context.close();
   }
 } finally {

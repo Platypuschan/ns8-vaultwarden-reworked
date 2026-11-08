@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+import json
+import sys
+import vaultwarden_panel as panel
+
+data = json.load(sys.stdin)
+
+
+def run():
+    panel.test_smtp(data['email'])
+    json.dump({'sent': True}, sys.stdout)
+
+
+panel.guarded(run, 'email')

@@ -214,6 +214,42 @@ Every NS8 administrator can open the admin page
     Should Contain    ${out}    NS8 owner revocation: no new ticket, admin session ended within its lifetime
     Should Contain    ${out}    Module self-administration: admin login denied
 
+Native admin pages use the real runtime and the cluster smarthost
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"users"}'
+    Should Not Contain    ${text}    securityStamp
+    Should Not Contain    ${text}    privateKey
+    ${users} =    Evaluate    json.loads($text)    modules=json
+    Should Be Equal    ${users['section']}    users
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"organizations"}'
+    ${orgs} =    Evaluate    json.loads($text)    modules=json
+    Should Be Equal    ${orgs['section']}    organizations
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"diagnostics"}'
+    ${diag} =    Evaluate    json.loads($text)    modules=json
+    Should Not Be Empty    ${diag['data']['current_release']}
+    ${text} =    Execute Command    api-cli run module/${APP}/query-panel-data --data '{"section":"settings"}'
+    Should Not Contain    ${text}    sso_client_secret
+    Should Not Contain    ${text}    "admin_token"
+    ${settings} =    Evaluate    json.loads($text)    modules=json
+    ${groups} =    Evaluate    [g['group'] for g in $settings['data']]
+    Should Be Equal    ${groups}    ${{['settings', 'advanced', 'duo', 'smtp', 'email_2fa']}}
+    # Normal settings are saved; module managed ones are refused
+    Run task    module/${APP}/set-panel-settings    {"values":{"org_creation_users":"admin@example.test"}}
+    ${rc} =    Execute Command    api-cli run module/${APP}/set-panel-settings --data '{"values":{"sso_only":false}}'    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
+    Run task    module/${APP}/reset-panel-settings    {}
+    # Mail: off, then custom again
+    Run task    module/${APP}/set-smtp-mode    {"mode":"disabled"}
+    ${rc} =    Execute Command    runagent -m ${APP} grep -Fx '_ENABLE_SMTP=false' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+    Run task    module/${APP}/set-smtp-mode    {"mode":"custom"}
+    ${rc} =    Execute Command    runagent -m ${APP} grep -q '^NS8_MANAGED_FIELDS=' vaultwarden.env    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+    # Without a cluster smarthost the mode is refused
+    ${rc} =    Execute Command    api-cli run module/${APP}/set-smtp-mode --data '{"mode":"smarthost"}'    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
+
 Concurrent IdP reconciliation and reconfiguration
     SSHLibrary.Put File    ${CURDIR}/check_reconfigure.sh    /tmp/vaultwarden-reconfigure-test.sh
     ${rc} =    Execute Command    bash /tmp/vaultwarden-reconfigure-test.sh ${IDP} ${APP} ${APP_HOST} ${DOMAIN}    return_rc=True    return_stdout=False

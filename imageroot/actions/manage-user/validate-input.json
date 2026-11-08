@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "operation"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "operation": {
+      "type": "string",
+      "enum": [
+        "delete",
+        "deauth",
+        "disable",
+        "enable",
+        "remove-2fa",
+        "delete-sso",
+        "set-org-role",
+        "resync-all"
+      ]
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "org_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "owner",
+        "admin",
+        "manager",
+        "user"
+      ]
+    }
+  }
+}

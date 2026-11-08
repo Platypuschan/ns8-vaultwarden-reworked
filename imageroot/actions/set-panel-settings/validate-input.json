@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "values"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "values": {
+      "type": "object",
+      "maxProperties": 200
+    }
+  }
+}

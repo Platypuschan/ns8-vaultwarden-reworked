@@ -4,9 +4,9 @@
 //! and the worker secret never leaves it.
 use std::{collections::HashMap, fs, path::Path, sync::{LazyLock, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
-use rocket::{form::Form, http::Status, request::{FromRequest, Outcome, Request}};
+use rocket::{form::Form, http::Status, request::{FromRequest, Outcome, Request}, serde::json::Json};
 use serde_json::Value;
-use crate::{crypto, CONFIG};
+use crate::{crypto, db::DbConn, CONFIG};
 
 const COOKIE: &str = "NS8_ADMIN";
 // Written by open-admin as <sha256 of the ticket>: {"user", "expires"}
@@ -141,4 +141,29 @@ pub fn logout(cookies: &rocket::http::CookieJar<'_>) {
         if let Ok(mut sessions) = SESSIONS.lock() { sessions.remove(cookie.value()); }
     }
     cookies.remove(rocket::http::Cookie::build(COOKIE).path(super::admin_path()));
+}
+
+
+// JSON views of the admin pages for the NS8 module page. The module reads
+// them with its worker credential; they hold what the HTML pages show.
+use super::{AdminToken, IpHeader};
+
+#[rocket::get("/ns8/data/settings")]
+pub fn data_settings(_token: AdminToken) -> Json<Value> {
+    Json(CONFIG.prepare_json())
+}
+
+#[rocket::get("/ns8/data/users")]
+pub async fn data_users(_token: AdminToken, conn: DbConn) -> Json<Value> {
+    Json(Value::Array(super::users_overview_data(&conn).await))
+}
+
+#[rocket::get("/ns8/data/organizations")]
+pub async fn data_organizations(_token: AdminToken, conn: DbConn) -> Json<Value> {
+    Json(Value::Array(super::organizations_overview_data(&conn).await))
+}
+
+#[rocket::get("/ns8/data/diagnostics")]
+pub async fn data_diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> Json<Value> {
+    Json(super::diagnostics_data(&ip_header, &conn).await)
 }
