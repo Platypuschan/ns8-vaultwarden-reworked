@@ -12,10 +12,16 @@ ${GROUP}    services_vaultwarden
 ${APP}    ${EMPTY}
 ${IDP}    ${EMPTY}
 ${SAMBA}    ${EMPTY}
+${RESTORED}    ${EMPTY}
 
 *** Keywords ***
 App is healthy
     ${rc} =    Execute Command    curl -kfsS --resolve ${APP_HOST}:443:127.0.0.1 https://${APP_HOST}/alive    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
+Host is healthy
+    [Arguments]    ${host}
+    ${rc} =    Execute Command    curl -kfsS --resolve ${host}:443:127.0.0.1 https://${host}/alive    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
 
 Policy is enforced
@@ -271,6 +277,58 @@ Backup snapshot and service restart
     Wait Until Keyword Succeeds    120s    3s    App is healthy
     ${rc} =    Execute Command    runagent -m ${APP} module-cleanup-state    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+
+Restore from a cluster backup into a new module identity
+    # P13: data, keys and settings survive a restore under a different module ID
+    ${host} =    Set Variable    vaultwarden-restored.fqdn.test
+    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sh -c 'echo restore-marker-4711 > /data/restore-marker'
+    ${key_orig} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    ${mark_orig} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/restore-marker
+    ${settings_orig} =    Execute Command    runagent -m ${APP} sha256sum settings.json
+    ${uuid} =    Execute Command    runagent -m ${APP} printenv MODULE_UUID
+    ${ip} =    Execute Command    ip -4 -o addr show wg0 | awk '{print $4}' | cut -d/ -f1
+    ${repo} =    Run task    cluster/add-backup-repository    {"name":"vw-restore-test","provider":"cluster","url":"webdav:http://${ip.strip()}:4694","password":"","parameters":{}}
+    ${backup} =    Run task    cluster/add-backup    {"repository":"${repo['id']}","schedule":"daily","retention":1,"instances":["${APP}"],"enabled":true,"name":"vw-restore-test"}
+    ${out}    ${err}    ${rc} =    Execute Command    runagent -m node run-backup --backup ${backup}    return_rc=True    return_stdout=True    return_stderr=True
+    Should Be Equal As Integers    ${rc}    0    ${out}\n${err}
+    ${content} =    Run task    cluster/read-backup-repositories    {}
+    Log    ${content}
+    ${path} =    Evaluate    [c['path'] for c in $content if c['uuid'] == $uuid.strip() and c['repository_id'] == $repo['id']][0]
+    ${before} =    Execute Command    runagent -l
+    Run task    cluster/restore-module    {"repository":"${repo['id']}","path":"${path}","snapshot":"","node":1,"replace":false}    decode_json=${FALSE}
+    ${after} =    Execute Command    runagent -l
+    ${new} =    Evaluate    [m for m in $after.split() if m.startswith('vaultwarden') and m not in $before.split()][0]
+    Should Not Be Equal    ${new}    ${APP}
+    Set Suite Variable    ${RESTORED}    ${new}
+    # Restored settings are kept, the service and the revocation timer stay off until SSO is prepared again
+    ${settings_new} =    Execute Command    runagent -m ${new} sha256sum settings.json
+    Should Be Equal    ${settings_orig.strip()}    ${settings_new.strip()}
+    ${rc} =    Execute Command    runagent -m ${new} systemctl --user is-active --quiet vaultwarden.service    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    runagent -m ${new} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
+    Should Not Be Equal As Integers    ${rc}    0
+    # Vault data is in the restored volume before anything starts
+    ${data} =    Execute Command    runagent -m ${new} sh -c 'podman run --rm --network=none -v vaultwarden-data:/data:ro --entrypoint sh "$VAULTWARDEN_REWORKED_SERVER_IMAGE" -c "test -s /data/db.sqlite3 && sha256sum /data/rsa_key.pem /data/restore-marker"'
+    Should Contain    ${data}    ${key_orig.split()[0]}
+    Should Contain    ${data}    ${mark_orig.split()[0]}
+    # New identity: new OIDC client, access policy, own host
+    Run task    module/${new}/prepare-sso    {"host":"${host}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
+    Run task    module/${IDP}/alter-realm-client    {"domain":"${DOMAIN}","client_id":"${new}","access_group":"${GROUP}"}    decode_json=${FALSE}
+    Run task    module/${new}/configure-module    {"host":"${host}","domain":"${DOMAIN}","idp_module":"${IDP}","required_group":"${GROUP}","lets_encrypt":false}
+    Wait Until Keyword Succeeds    120s    3s    Host is healthy    ${host}
+    ${policy} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${new}"}
+    Should Be True    ${policy['enforced']}
+    Should Be Empty    ${policy['issues']}
+    ${key_new} =    Execute Command    runagent -m ${new} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
+    ${mark_new} =    Execute Command    runagent -m ${new} podman exec vaultwarden-app sha256sum /data/restore-marker
+    Should Be Equal    ${key_orig.strip()}    ${key_new.strip()}
+    Should Be Equal    ${mark_orig.strip()}    ${mark_new.strip()}
+    ${rc} =    Execute Command    runagent -m ${new} systemctl --user is-enabled --quiet vaultwarden-revoke.timer    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    remove-module --no-preserve ${new}    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    Run task    cluster/remove-backup    {"id":${backup}}    decode_json=${FALSE}
+    Run task    cluster/remove-backup-repository    {"id":"${repo['id']}"}    decode_json=${FALSE}
 
 Remove application and IdP
     ${rc} =    Execute Command    remove-module --no-preserve ${APP}    return_rc=True    return_stdout=False

@@ -20,6 +20,10 @@ class FakeAdmin:
         return [dict(u) for u in self.accounts.values()]
     def deauth(self, user_id):
         self.calls.append(('deauth', user_id))
+        # Like Vaultwarden: all devices are deleted
+        self.accounts[user_id]['lastActive'] = None
+    def login(self, user_id):
+        self.accounts[user_id]['lastActive'] = '2026-11-08 12:00:00'
 
 
 
@@ -28,10 +32,10 @@ class RevokeTests(unittest.TestCase):
         self.dir=tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
         self.api=FakeAdmin([
-            {'id':'a','email':'Alice@Example.test','userEnabled':True},
-            {'id':'b','email':'bob@example.test','userEnabled':True},
+            {'id':'a','email':'Alice@Example.test','userEnabled':True,'lastActive':'2026-11-01 10:00:00'},
+            {'id':'b','email':'bob@example.test','userEnabled':True,'lastActive':'2026-11-01 10:00:00'},
             # Disabled by an administrator
-            {'id':'c','email':'carol@example.test','userEnabled':False},
+            {'id':'c','email':'carol@example.test','userEnabled':False,'lastActive':None},
         ])
     def reconcile(self, members):
         return revoke.reconcile(self.api,members,self.dir.name)
@@ -39,9 +43,9 @@ class RevokeTests(unittest.TestCase):
     def test_non_members_are_logged_out_and_never_disabled(self):
         before = dict(self.api.accounts['b'])
         report = self.reconcile({'alice@example.test', 'carol@example.test'})
-        self.assertEqual(report, {'deauthenticated': 1, 'failed': 0, 'legacy_disabled': 0})
+        self.assertEqual(report, {'deauthenticated': 1, 'skipped': 0, 'failed': 0, 'legacy_disabled': 0})
         self.assertEqual(self.api.calls, [('deauth', 'b')])
-        self.assertEqual(self.api.accounts['b'], before)
+        self.assertEqual({k: v for k, v in self.api.accounts['b'].items() if k != 'lastActive'}, {k: v for k, v in before.items() if k != 'lastActive'})
         self.reconcile({'alice@example.test', 'bob@example.test', 'carol@example.test'})
         self.assertEqual(len(self.api.calls), 1)
         self.assertFalse(self.api.accounts['c']['userEnabled'])
@@ -72,7 +76,8 @@ class RevokeTests(unittest.TestCase):
         self.assertEqual(report['deauthenticated'], 2)
         self.assertEqual(set(self.api.calls), {('deauth', 'b'), ('deauth', 'c')})
         self.api.deauth = original
-        self.assertEqual(self.reconcile(set())['deauthenticated'], 3)
+        report = self.reconcile(set())
+        self.assertEqual((report['deauthenticated'], report['skipped']), (1, 2))
         self.assertFalse((Path(self.dir.name) / revoke.REVOKED_FILE).exists())
 
     def test_unreachable_vaultwarden_stops_the_run(self):
@@ -83,6 +88,41 @@ class RevokeTests(unittest.TestCase):
         with self.assertRaises(revoke.UnavailableError):
             self.reconcile(set())
         self.assertEqual(len(self.api.calls), 1)
+
+    def test_ended_nonmember_without_devices_is_skipped_until_a_new_login(self):
+        self.reconcile(set())
+        self.assertEqual(len(self.api.calls), 3)
+        report = self.reconcile(set())
+        self.assertEqual((report['deauthenticated'], report['skipped']), (0, 3))
+        self.assertEqual(len(self.api.calls), 3)
+        self.api.login('b')
+        report = self.reconcile(set())
+        self.assertEqual((report['deauthenticated'], report['skipped']), (1, 2))
+        self.assertEqual(self.api.calls[-1], ('deauth', 'b'))
+
+    def test_without_proof_of_an_earlier_logout_a_deviceless_user_is_still_logged_out(self):
+        self.api.accounts['a']['lastActive'] = None
+        self.reconcile({'bob@example.test'})
+        self.assertIn(('deauth', 'a'), self.api.calls)
+
+    def test_regained_membership_forgets_the_proof(self):
+        self.reconcile(set())
+        self.reconcile({'bob@example.test'})
+        self.reconcile(set())
+        self.assertEqual(self.api.calls.count(('deauth', 'b')), 2)
+
+    def test_failed_logout_is_never_remembered_and_removed_users_are_dropped(self):
+        original = self.api.deauth
+        def fails(user):
+            raise revoke.RevokeError('HTTP 500')
+        self.api.deauth = fails
+        self.reconcile(set())
+        self.assertEqual(revoke._load_ended(self.dir.name), set())
+        self.api.deauth = original
+        self.reconcile(set())
+        del self.api.accounts['a']
+        self.reconcile(set())
+        self.assertEqual(revoke._load_ended(self.dir.name), {'b', 'c'})
 
     def test_status_keeps_the_reason(self):
         revoke.write_status(error='IdP too old', state_dir=self.dir.name, reason='idp_update_required')

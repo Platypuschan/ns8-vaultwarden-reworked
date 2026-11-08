@@ -13,6 +13,7 @@ import urllib.request
 LDAP_BITWISE_AND = '1.2.840.113556.1.4.803'
 ACCOUNTDISABLE = 2
 REVOKED_FILE = 'revoked-users.json'
+ENDED_FILE = 'ended-sessions.json'
 SESSION_FILE = 'admin-session'
 
 
@@ -213,6 +214,20 @@ def _load_revoked(state_dir):
         return None
 
 
+def _load_ended(state_dir):
+    try:
+        with open(os.path.join(state_dir, ENDED_FILE)) as f:
+            data = json.load(f)
+        return set(data) if isinstance(data, list) else set()
+    except (FileNotFoundError, ValueError, OSError, TypeError):
+        return set()
+
+
+def _save_ended(state_dir, ended):
+    from vaultwarden_config import private_write
+    private_write(os.path.join(state_dir, ENDED_FILE), json.dumps(sorted(ended)))
+
+
 def reconcile(api, members, state_dir='.'):
     """End the sessions of nonmembers. Never disable or re-enable accounts.
 
@@ -220,20 +235,42 @@ def reconcile(api, members, state_dir='.'):
     old journal is retained, but is no longer an authority to enable anyone.
     A user whose sessions cannot be ended does not stop the others: the
     caller reports the failures. Only an unreachable Vaultwarden stops.
+
+    A nonmember is skipped only with proof that nothing is left to end: we
+    ended their sessions earlier (the security stamp was reset, which voids
+    every access token) and Vaultwarden now lists no device for them (a
+    device is needed for any login and for any refresh token). A new login
+    creates a device, so the next run ends it again.
     """
     legacy = _load_revoked(state_dir)
-    report = {'deauthenticated': 0, 'failed': 0, 'legacy_disabled': len(legacy) if isinstance(legacy, dict) else None}
-    for user in api.users():
-        email = (user.get('email') or '').strip().lower()
-        if not email or email not in members:
+    report = {'deauthenticated': 0, 'skipped': 0, 'failed': 0, 'legacy_disabled': len(legacy) if isinstance(legacy, dict) else None}
+    ended = _load_ended(state_dir)
+    before = set(ended)
+    users = api.users()
+    ids = {user['id'] for user in users}
+    try:
+        for user in users:
+            email = (user.get('email') or '').strip().lower()
+            if email and email in members:
+                ended.discard(user['id'])
+                continue
+            if user['id'] in ended and not user.get('lastActive'):
+                report['skipped'] += 1
+                continue
             try:
                 api.deauth(user['id'])
             except UnavailableError:
                 raise
             except RevokeError:
                 report['failed'] += 1
+                ended.discard(user['id'])
                 continue
+            ended.add(user['id'])
             report['deauthenticated'] += 1
+    finally:
+        ended &= ids
+        if ended != before:
+            _save_ended(state_dir, ended)
     return report
 
 
