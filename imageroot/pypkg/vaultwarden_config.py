@@ -17,6 +17,13 @@ from vaultwarden_admin import SESSION_SECONDS
 ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
 # Argon2id PHC string as written by `vaultwarden hash`
 ADMIN_TOKEN_HASH = re.compile(r'\$argon2id\$v=19\$m=[0-9]{1,8},t=[0-9]{1,3},p=[0-9]{1,3}\$[A-Za-z0-9+/]{16,}\$[A-Za-z0-9+/]{32,}\Z')
+# How Vaultwarden mail is configured: off, the cluster smarthost, or custom
+SMTP_MODE_FILE = 'smtp-mode.json'
+SMTP_MODES = ('disabled', 'smarthost', 'custom')
+# SMTP environment lines of the module; all others are left untouched
+SMTP_ENV_KEYS = ('_ENABLE_SMTP', 'USE_SENDMAIL', 'SMTP_HOST', 'SMTP_SECURITY', 'SMTP_PORT',
+    'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_ACCEPT_INVALID_CERTS', 'SMTP_ACCEPT_INVALID_HOSTNAMES',
+    'NS8_MANAGED_FIELDS')
 # Clear-text worker credential: only the revocation worker reads it
 WORKER_TOKEN_FILE = 'admin-worker.token'
 HOST = re.compile(r'(?=.{1,253}\Z)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\Z')
@@ -206,3 +213,42 @@ def rotate_worker_token(env_path='vaultwarden.env', token_path=WORKER_TOKEN_FILE
     with open(env_path) as stream:
         lines = [line for line in stream.read().splitlines() if not line.startswith('ADMIN_TOKEN=')]
     private_write(env_path, '\n'.join(lines + ['ADMIN_TOKEN=' + hashed]) + '\n')
+
+
+def smtp_lines(mode, smarthost=None):
+    """Environment lines of an SMTP mode. Vaultwarden shows the fields named
+    in NS8_MANAGED_FIELDS as read-only and ignores saved values for them."""
+    if mode == 'custom':
+        return []
+    if mode == 'smarthost':
+        if not (smarthost and smarthost.get('enabled') and smarthost.get('host')):
+            raise ValueError('The cluster has no smarthost configured')
+        security = {'tls': 'force_tls', 'starttls': 'starttls'}.get(smarthost.get('encrypt_smtp'), 'off')
+        verify = smarthost.get('tls_verify', True) is not False
+        values = [('_ENABLE_SMTP', 'true'), ('USE_SENDMAIL', 'false'), ('SMTP_HOST', str(smarthost['host'])),
+            ('SMTP_SECURITY', security), ('SMTP_PORT', str(int(smarthost.get('port') or 25))),
+            ('SMTP_ACCEPT_INVALID_CERTS', 'false' if verify else 'true'),
+            ('SMTP_ACCEPT_INVALID_HOSTNAMES', 'false' if verify else 'true')]
+        if smarthost.get('username'):
+            values.append(('SMTP_USERNAME', str(smarthost['username'])))
+        if smarthost.get('password'):
+            values.append(('SMTP_PASSWORD', str(smarthost['password'])))
+        managed = ['_enable_smtp', 'use_sendmail', 'smtp_host', 'smtp_security', 'smtp_port', 'smtp_username',
+            'smtp_password', 'smtp_accept_invalid_certs', 'smtp_accept_invalid_hostnames']
+    elif mode == 'disabled':
+        values = [('_ENABLE_SMTP', 'false'), ('USE_SENDMAIL', 'false')]
+        managed = ['_enable_smtp', 'use_sendmail', 'smtp_host', 'smtp_security', 'smtp_port', 'smtp_from',
+            'smtp_from_name', 'smtp_username', 'smtp_password', 'smtp_auth_mechanism', 'smtp_timeout', 'helo_name',
+            'smtp_embed_images', 'smtp_accept_invalid_certs', 'smtp_accept_invalid_hostnames']
+    else:
+        raise ValueError('Invalid SMTP mode')
+    values.append(('NS8_MANAGED_FIELDS', ','.join(managed)))
+    if any(any(c in v for c in '\r\n\x00') for _, v in values):
+        raise ValueError('Invalid multiline environment value')
+    return [f'{k}={v}' for k, v in values]
+
+
+def apply_smtp(env_text, mode, smarthost=None):
+    """Environment text with the SMTP lines of mode instead of earlier ones."""
+    lines = [line for line in env_text.splitlines() if line.partition('=')[0] not in SMTP_ENV_KEYS]
+    return '\n'.join(lines + smtp_lines(mode, smarthost)) + '\n'

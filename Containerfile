@@ -1,6 +1,14 @@
+# Build the module page (Vue 2 / Carbon, like the other NS8 modules)
+FROM docker.io/library/node:24.20.0 AS ui
+WORKDIR /usr/src/ui
+COPY ui/package.json ui/yarn.lock ./
+RUN corepack enable && yarn install --immutable
+COPY ui/ ./
+RUN yarn build
+
 FROM scratch
 COPY imageroot /imageroot
-COPY ui /ui
+COPY --from=ui /usr/src/ui/dist /ui
 ENTRYPOINT ["/"]
 ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:2988ba83c8c7599faaf9d15876bc2358b43465bbbbac869e791dd82d5cf18b8b
 LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden-reworked" \

@@ -46,10 +46,11 @@ try {
     const context = await browser.newContext({ignoreHTTPSErrors: true});
     const page = await context.newPage();
     const manager = role === 'public-suffix' ? cluster.replace('cluster.example.test', 'cluster.two.co.uk') : cluster;
-    await page.goto(manager + '?role=' + role);
+    await page.goto(manager + '?page=admin&role=' + role);
     if (role === 'reader') {
-      const frame = page.frameLocator('iframe').first();
-      await frame.locator('#status').filter({hasText: 'NS8-Administrator'}).waitFor();
+      const application = page.frameLocator('iframe').first();
+      await application.locator('.bx--inline-notification--error').waitFor();
+      assert(!page.frames().some(f => f.url() === vault + '/admin/'), 'a reader must not get the admin page');
       assert.equal(new URL(page.url()).hostname, 'cluster.example.test');
       console.log('Browser reader: no admin navigation');
     } else if (role === 'public-suffix') {
@@ -65,15 +66,15 @@ try {
       }
       assert(embedded);
       await embedded.locator('#config-form').waitFor();
-      assert(!(await application.locator('#open').isVisible()));
+      assert(!(await application.getByRole('button', {name: 'Open in new tab'}).isVisible()));
       const blocked = await embedded.evaluate(async () => (await fetch('/admin/users')).status);
       assert.equal(blocked, 403, 'Strict cookie must be unavailable across two distinct co.uk sites');
       assert(page.url().startsWith(manager));
       console.log('Browser public suffix: embedded without fallback, cross-site Strict cookie rejected');
     } else if (role === 'tab') {
       const frame = page.frameLocator('iframe').first();
-      await frame.locator('#status').filter({hasText: 'neuem Tab'}).waitFor();
-      const [tab] = await Promise.all([context.waitForEvent('page'), frame.locator('#open').click()]);
+      await frame.getByRole('button', {name: 'Open in new tab'}).waitFor();
+      const [tab] = await Promise.all([context.waitForEvent('page'), frame.getByRole('button', {name: 'Open in new tab'}).click()]);
       await tab.waitForURL(vault + '/admin/', {timeout: 30000});
       await tab.locator('#config-form').waitFor();
       assert(page.url().startsWith(cluster));
@@ -84,21 +85,17 @@ try {
     } else {
       let frame = await adminFrame(page);
       assert.equal(context.pages().length, 1);
-      // Only the admin frame, over the whole application area
+      // The admin page sits in the module page next to the NS8 menu
       const application = page.frameLocator('iframe').first();
-      for (const selector of ['h1', '#status', '#open'])
-        assert(!(await application.locator(selector).isVisible()), selector + ' must be hidden');
-      assert(!(await application.locator('#warning').isVisible()), 'no warning bar over the admin frame');
-      const notices = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
+      await application.getByRole('link', {name: 'Settings'}).waitFor();
+      const admin = await application.locator('iframe[name=vaultwarden-admin-frame]').boundingBox();
+      assert(admin.width > 600 && admin.height > 400, `admin frame ${admin.width}x${admin.height} too small`);
+      const warning = application.locator('.bx--inline-notification--warning');
       if (role === 'owner1') {
-        assert(notices.some(n => n.startsWith('warning:') && n.includes('Zugriffswiderruf')), notices.join());
+        await warning.filter({hasText: 'access revocation is disturbed'}).waitFor();
       } else {
-        assert.deepEqual(notices, []);
+        assert.equal(await warning.count(), 0, 'no warning expected');
       }
-      const area = await page.locator('iframe').first().boundingBox();
-      const admin = await application.locator('#admin-frame').boundingBox();
-      assert(Math.abs(admin.width - area.width) <= 1 && Math.abs(admin.height - area.height) <= 1,
-        `admin frame ${admin.width}x${admin.height} must fill ${area.width}x${area.height}`);
       const cookies = await context.cookies(vault + '/admin/');
       assert(cookies.some(cookie => cookie.name === 'NS8_ADMIN' && cookie.httpOnly && cookie.secure));
       assert(await frame.locator('#input_sso_enabled').isDisabled());
@@ -148,8 +145,7 @@ try {
         await control.close();
         await page.waitForTimeout(20000);
         assert.equal(await frame.evaluate(async () => (await fetch('/admin/users')).status), 403);
-        const ended = await page.evaluate(() => window.notifications.map(n => n.type + ':' + n.description));
-        assert(ended.some(n => n.startsWith('warning:') && n.includes('nicht verlängert')), ended.join());
+        await application.locator('.bx--inline-notification--warning').filter({hasText: 'cannot be renewed'}).waitFor();
         console.log('Browser owner2: session renewed while open, ended after the NS8 right was revoked');
       }
       console.log('Browser ' + role + ': automatic admin login in the application frame, users and persistent settings OK');

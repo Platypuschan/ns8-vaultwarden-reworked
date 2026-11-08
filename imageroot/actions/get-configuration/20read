@@ -3,10 +3,16 @@ import json
 import sys
 from pathlib import Path
 import vaultwarden_revoke as revoke
+import vaultwarden_panel as panel
 if Path('settings.json').exists():
     with open('settings.json') as f:
         config = json.load(f)
     config['revocation'] = revoke.status()
+    config['smtp_mode'] = panel.read_smtp_mode()
+    try:
+        config['smarthost_available'] = panel.smarthost_available(panel.read_smarthost())
+    except Exception:
+        config['smarthost_available'] = False
     json.dump(config, sys.stdout)
 else:
     json.dump({'configured': False}, sys.stdout)

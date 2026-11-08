@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+import agent
+import vaultwarden_config as policy
+import vaultwarden_panel as panel
+
+data = json.load(sys.stdin)
+
+
+def run():
+    mode = data['mode']
+    smarthost = panel.read_smarthost() if mode == 'smarthost' else None
+    if mode == 'smarthost' and not panel.smarthost_available(smarthost):
+        raise ValueError('The cluster has no smarthost configured. Set it up in the cluster settings first')
+    with agent.exclusive_file_lock('configuration'):
+        panel.apply_smtp_mode(mode, smarthost)
+        panel.write_smtp_mode(mode)
+    # The environment is read at start
+    subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)
+    json.dump({'mode': mode}, sys.stdout)
+
+
+panel.guarded(run, 'mode')

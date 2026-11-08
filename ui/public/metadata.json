@@ -1,0 +1,21 @@
+{
+  "name": "Vaultwarden Reworked",
+  "description": {
+    "en": "Vaultwarden with AD SSO, managed from the NS8 cluster manager",
+    "de": "Vaultwarden mit AD-SSO, verwaltet im NS8-Cluster-Manager"
+  },
+  "categories": [
+    "security"
+  ],
+  "authors": [
+    {
+      "name": "Platypuschan"
+    }
+  ],
+  "source": "ghcr.io/platypuschan/vaultwarden-reworked",
+  "docs": {
+    "documentation_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/blob/main/docs/INSTALL-IDP.md",
+    "bug_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked/issues",
+    "code_url": "https://github.com/Platypuschan/ns8-vaultwarden-reworked"
+  }
+}

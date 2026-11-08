@@ -1,5 +1,5 @@
 diff --git a/src/api/admin.rs b/src/api/admin.rs
-index 1a2b8c9..323e8ab 100644
+index 1a2b8c9..a5b8e7a 100644
 --- a/src/api/admin.rs
 +++ b/src/api/admin.rs
 @@ -1,3 +1,6 @@
@@ -9,15 +9,19 @@ index 1a2b8c9..323e8ab 100644
  use std::{env, sync::LazyLock};
  
  use reqwest::Method;
-@@ -48,6 +51,7 @@ pub fn routes() -> Vec<Route> {
+@@ -48,6 +51,11 @@ pub fn routes() -> Vec<Route> {
          get_user_json,
          get_user_by_mail_json,
          post_admin_login,
 +        ns8::renew_session,
++        ns8::data_settings,
++        ns8::data_users,
++        ns8::data_organizations,
++        ns8::data_diagnostics,
          admin_page,
          admin_page_login,
          invite_user,
-@@ -184,6 +188,7 @@ struct LoginForm {
+@@ -184,6 +192,7 @@ struct LoginForm {
  #[post("/", format = "application/x-www-form-urlencoded", data = "<data>")]
  fn post_admin_login(
      data: Form<LoginForm>,
@@ -25,7 +29,7 @@ index 1a2b8c9..323e8ab 100644
      cookies: &CookieJar<'_>,
      ip: ClientIp,
      secure: Secure,
-@@ -198,6 +203,18 @@ fn post_admin_login(
+@@ -198,6 +207,18 @@ fn post_admin_login(
          )));
      }
  
@@ -44,7 +48,7 @@ index 1a2b8c9..323e8ab 100644
      // If the token is invalid, redirect to login page
      if validate_token(&data.token) {
          // If the token received is valid, generate JWT and save it as a cookie
-@@ -350,6 +367,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
+@@ -350,6 +371,7 @@ async fn test_smtp(data: Json<InviteData>, _token: AdminToken) -> EmptyResult {
  
  #[get("/logout")]
  fn logout(cookies: &CookieJar<'_>) -> Redirect {
@@ -52,7 +56,137 @@ index 1a2b8c9..323e8ab 100644
      cookies.remove(Cookie::build(COOKIE_NAME).path(admin_path()));
      Redirect::to(admin_path())
  }
-@@ -883,6 +901,10 @@ impl<'r> FromRequest<'r> for AdminToken {
+@@ -374,16 +396,22 @@ async fn get_users_json(_token: AdminToken, conn: DbConn) -> Json<Value> {
+ 
+ #[get("/users/overview")]
+ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+-    let users = User::get_all(&conn).await;
++    let users_json = users_overview_data(&conn).await;
++    let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
++    Ok(Html(text))
++}
++
++async fn users_overview_data(conn: &DbConn) -> Vec<Value> {
++    let users = User::get_all(conn).await;
+     let mut users_json = Vec::with_capacity(users.len());
+     for (u, sso_u) in users {
+-        let mut usr = u.to_json(&conn).await;
+-        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, &conn).await);
+-        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, &conn).await);
+-        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, &conn).await));
++        let mut usr = u.to_json(conn).await;
++        usr["cipher_count"] = json!(Cipher::count_owned_by_user(&u.uuid, conn).await);
++        usr["attachment_count"] = json!(Attachment::count_by_user(&u.uuid, conn).await);
++        usr["attachment_size"] = json!(get_display_size(Attachment::size_by_user(&u.uuid, conn).await));
+         usr["user_enabled"] = json!(u.enabled);
+         usr["created_at"] = json!(format_naive_datetime_local(&u.created_at, DT_FMT));
+-        usr["last_active"] = match u.last_active(&conn).await {
++        usr["last_active"] = match u.last_active(conn).await {
+             Some(dt) => json!(format_naive_datetime_local(&dt, DT_FMT)),
+             None => json!("Never"),
+         };
+@@ -392,9 +420,7 @@ async fn users_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<Stri
+ 
+         users_json.push(usr);
+     }
+-
+-    let text = AdminTemplateData::new("admin/users", json!(users_json)).render()?;
+-    Ok(Html(text))
++    users_json
+ }
+ 
+ #[get("/users/by-mail/<mail>")]
+@@ -603,22 +629,26 @@ async fn update_revision_users(_token: AdminToken, conn: DbConn) -> EmptyResult
+ 
+ #[get("/organizations/overview")]
+ async fn organizations_overview(_token: AdminToken, conn: DbConn) -> ApiResult<Html<String>> {
+-    let organizations = Organization::get_all(&conn).await;
++    let organizations_json = organizations_overview_data(&conn).await;
++    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
++    Ok(Html(text))
++}
++
++async fn organizations_overview_data(conn: &DbConn) -> Vec<Value> {
++    let organizations = Organization::get_all(conn).await;
+     let mut organizations_json = Vec::with_capacity(organizations.len());
+     for o in organizations {
+         let mut org = o.to_json();
+-        org["user_count"] = json!(Membership::count_by_org(&o.uuid, &conn).await);
+-        org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, &conn).await);
+-        org["collection_count"] = json!(Collection::count_by_org(&o.uuid, &conn).await);
+-        org["group_count"] = json!(Group::count_by_org(&o.uuid, &conn).await);
+-        org["event_count"] = json!(Event::count_by_org(&o.uuid, &conn).await);
+-        org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, &conn).await);
+-        org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, &conn).await));
++        org["user_count"] = json!(Membership::count_by_org(&o.uuid, conn).await);
++        org["cipher_count"] = json!(Cipher::count_by_org(&o.uuid, conn).await);
++        org["collection_count"] = json!(Collection::count_by_org(&o.uuid, conn).await);
++        org["group_count"] = json!(Group::count_by_org(&o.uuid, conn).await);
++        org["event_count"] = json!(Event::count_by_org(&o.uuid, conn).await);
++        org["attachment_count"] = json!(Attachment::count_by_org(&o.uuid, conn).await);
++        org["attachment_size"] = json!(get_display_size(Attachment::size_by_org(&o.uuid, conn).await));
+         organizations_json.push(org);
+     }
+-
+-    let text = AdminTemplateData::new("admin/organizations", json!(organizations_json)).render()?;
+-    Ok(Html(text))
++    organizations_json
+ }
+ 
+ #[post("/organizations/<org_id>/delete", format = "application/json")]
+@@ -760,6 +790,12 @@ fn folder_has_hbs_files(dir: &std::path::Path) -> bool {
+ 
+ #[get("/diagnostics")]
+ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> ApiResult<Html<String>> {
++    let diagnostics_json = diagnostics_data(&ip_header, &conn).await;
++    let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;
++    Ok(Html(text))
++}
++
++async fn diagnostics_data(ip_header: &IpHeader, conn: &DbConn) -> Value {
+     use chrono::prelude::*;
+     use std::net::ToSocketAddrs;
+ 
+@@ -781,7 +817,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
+     let active_web_release = get_active_web_release();
+     let web_vault_compare = web_vault_compare(&active_web_release, &latest_web_release);
+ 
+-    let ip_header_name = &ip_header.0.unwrap_or_default();
++    let ip_header_name = &ip_header.0.clone().unwrap_or_default();
+ 
+     let invalid_feature_flags: Vec<String> = parse_experimental_client_feature_flags(
+         &CONFIG.experimental_client_feature_flags(),
+@@ -792,7 +828,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
+ 
+     let invalid_env_vars = crate::util::INVALID_ENV_VARS.lock().unwrap().join(", ");
+ 
+-    let diagnostics_json = json!({
++    json!({
+         "dns_resolved": dns_resolved,
+         "current_release": VERSION,
+         "latest_release": latest_vw_release,
+@@ -811,7 +847,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
+         "uses_proxy": uses_proxy,
+         "enable_websocket": &CONFIG.enable_websocket(),
+         "db_type": *DB_TYPE,
+-        "db_version": get_sql_server_version(&conn).await,
++        "db_version": get_sql_server_version(conn).await,
+         "admin_url": format!("{}/diagnostics", admin_url()),
+         "overrides": &CONFIG.get_overrides().join(", "),
+         "config_file_status": &CONFIG.get_config_file_status(),
+@@ -824,10 +860,7 @@ async fn diagnostics(_token: AdminToken, ip_header: IpHeader, conn: DbConn) -> A
+         "server_time_local": Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string(),
+         "server_time": Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(), // Run the server date/time check as late as possible to minimize the time difference
+         "ntp_time": get_ntp_time(has_http_access).await, // Run the ntp check as late as possible to minimize the time difference
+-    });
+-
+-    let text = AdminTemplateData::new("admin/diagnostics", diagnostics_json).render()?;
+-    Ok(Html(text))
++    })
+ }
+ 
+ #[get("/diagnostics/config", format = "application/json")]
+@@ -883,6 +916,10 @@ impl<'r> FromRequest<'r> for AdminToken {
              err_handler!("Error getting Client IP")
          };
  
@@ -76,10 +210,10 @@ index 4608ed7..2e9bef3 100644
              check_is_some(data.client_id.as_ref(), "client_id cannot be blank")?;
              check_is_some(data.client_secret.as_ref(), "client_secret cannot be blank")?;
 diff --git a/src/config.rs b/src/config.rs
-index 8bebc4d..4e2e342 100644
+index 8bebc4d..5f55ad0 100644
 --- a/src/config.rs
 +++ b/src/config.rs
-@@ -21,6 +21,22 @@ use crate::{
+@@ -21,6 +21,25 @@ use crate::{
      },
  };
  
@@ -96,13 +230,16 @@ index 8bebc4d..4e2e342 100644
 +        && (name.starts_with("sso_") || matches!(name,
 +            "domain" | "admin_token" | "signups_allowed" | "invitations_allowed"
 +            | "email_change_allowed" | "push_enabled" | "ip_header" | "ip_header_trusted_proxies"
-+            | "allowed_iframe_ancestors"))
++            | "allowed_iframe_ancestors")
++            // Further values the module sets itself (for example the SMTP
++            // connection when it follows the cluster smarthost)
++            || get_env::<String>("NS8_MANAGED_FIELDS").is_some_and(|list| list.split(',').any(|field| field == name)))
 +}
 +
  static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| {
      let data_folder = get_env("DATA_FOLDER").unwrap_or_else(|| String::from("data"));
      get_env("CONFIG_FILE").unwrap_or_else(|| storage::join_path(&data_folder, "config.json"))
-@@ -274,9 +290,17 @@ macro_rules! make_config {
+@@ -274,9 +293,17 @@ macro_rules! make_config {
                  Ok(Some(builder))
              }
  
@@ -121,7 +258,7 @@ index 8bebc4d..4e2e342 100644
                          self.$name = None;
                      }
                  )+)+
-@@ -401,10 +425,14 @@ macro_rules! make_config {
+@@ -401,10 +428,14 @@ macro_rules! make_config {
                          elements: vec![
                          $( // This repetition is for each element within a group
                              ElementData {
@@ -139,7 +276,7 @@ index 8bebc4d..4e2e342 100644
                                  r#type: get_form_type(stringify!($ty)),
                                  doc: get_doc(concat!($($doc),+)),
                                  overridden: overridden.contains(&pastey::paste!(stringify!([<$name:upper>]))),
-@@ -1527,7 +1555,7 @@ impl Config {
+@@ -1527,7 +1558,7 @@ impl Config {
      pub async fn load() -> Result<Self, Error> {
          // Loading from env and file
          let env = ConfigBuilder::from_env();
@@ -148,7 +285,7 @@ index 8bebc4d..4e2e342 100644
              Ok(Some(usr)) => (usr, ConfigFileStatus::Loaded),
              Ok(None) => (ConfigBuilder::default(), ConfigFileStatus::NotFound),
              Err(e) => {
-@@ -1544,6 +1572,7 @@ impl Config {
+@@ -1544,6 +1575,7 @@ impl Config {
                  (ConfigBuilder::default(), ConfigFileStatus::Error)
              }
          };

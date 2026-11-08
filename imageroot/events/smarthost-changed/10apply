@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+# Follow the cluster smarthost while the module mail mode is "smarthost".
+import os
+import subprocess
+import sys
+import agent
+import vaultwarden_panel as panel
+
+if not os.path.exists('vaultwarden.env') or panel.read_smtp_mode() != 'smarthost':
+    sys.exit(0)
+smarthost = panel.read_smarthost()
+mode = 'smarthost' if panel.smarthost_available(smarthost) else 'disabled'
+with agent.exclusive_file_lock('configuration'):
+    panel.apply_smtp_mode(mode, smarthost)
+if subprocess.run(['systemctl', '--user', 'is-enabled', '--quiet', 'vaultwarden.service']).returncode == 0:
+    subprocess.run(['systemctl', '--user', 'restart', 'vaultwarden.service'], check=True, stdout=sys.stderr)

@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+import json
+import sys
+import vaultwarden_panel as panel
+
+data = json.load(sys.stdin)
+
+
+def run():
+    panel.manage_user(data['operation'], data.get('user_id'), data.get('role'), data.get('org_id'))
+    json.dump({'done': True}, sys.stdout)
+
+
+panel.guarded(run)

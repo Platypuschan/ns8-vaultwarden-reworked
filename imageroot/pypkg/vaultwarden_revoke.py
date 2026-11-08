@@ -153,29 +153,45 @@ class AdminAPI:
         with os.fdopen(fd, 'w') as f:
             f.write(cookie)
 
-    def request(self, method, path):
+    def request(self, method, path, payload=None):
         for attempt in (1, 2):
             if not self.cookie:
                 self.login()
             headers = {'Cookie': 'VW_ADMIN=' + self.cookie}
             body = None
-            if method == 'POST':
+            if method in ('POST', 'DELETE'):
                 headers['Content-Type'] = 'application/json'
-                body = b''
+                body = b'' if payload is None else json.dumps(payload).encode()
             status, _, data = self._open(method, path, body, headers)
             if status in (401, 403, 303) and attempt == 1:
                 # The admin session expired
                 self.cookie = None
                 continue
             if status >= 300:
-                raise RevokeError(f'Vaultwarden admin API {method} {path.split("/")[1]}: HTTP {status}')
-            return json.loads(data) if data else None
+                error = RevokeError(f'Vaultwarden admin API {method} {path.split("/")[1]}: HTTP {status}')
+                error.detail = _error_detail(data)
+                raise error
+            try:
+                return json.loads(data) if data else None
+            except ValueError:
+                # Some actions answer with a plain message
+                return data.decode(errors='replace')
 
     def users(self):
         return self.request('GET', '/admin/users')
 
     def deauth(self, user_id):
         self.request('POST', f'/admin/users/{urllib.parse.quote(user_id, safe="")}/deauth')
+
+
+def _error_detail(data):
+    """Message of a Vaultwarden error answer, for the module page."""
+    try:
+        body = json.loads(data)
+        model = body.get('ErrorModel') or body
+        return str(model.get('Message') or model.get('message') or '')[:300]
+    except (ValueError, AttributeError, TypeError):
+        return ''
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
