@@ -100,53 +100,55 @@
                       >{{ org.name }} ({{ roleName(org.type) }})</NsButton
                     >
                   </td>
-                  <td class="actions">
-                    <NsButton
-                      v-if="user.twoFactorEnabled"
-                      kind="ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('remove-2fa', user)"
-                      >{{ $t("users.remove_2fa") }}</NsButton
-                    >
-                    <NsButton
-                      kind="ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('deauth', user)"
-                      >{{ $t("users.deauth") }}</NsButton
-                    >
-                    <NsButton
-                      v-if="user.user_enabled"
-                      kind="ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('disable', user)"
-                      >{{ $t("users.disable") }}</NsButton
-                    >
-                    <NsButton
-                      v-else
-                      kind="ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('enable', user)"
-                      >{{ $t("users.enable") }}</NsButton
-                    >
-                    <NsButton
-                      v-if="user.sso_identifier"
-                      kind="danger--ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('delete-sso', user)"
-                      >{{ $t("users.delete_sso") }}</NsButton
-                    >
-                    <NsButton
-                      kind="danger--ghost"
-                      size="small"
-                      :disabled="busy"
-                      @click="ask('delete', user)"
-                      >{{ $t("users.delete") }}</NsButton
-                    >
+                  <td>
+                    <div class="actions">
+                      <NsButton
+                        v-if="user.twoFactorEnabled"
+                        kind="ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('remove-2fa', user)"
+                        >{{ $t("users.remove_2fa") }}</NsButton
+                      >
+                      <NsButton
+                        kind="ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('deauth', user)"
+                        >{{ $t("users.deauth") }}</NsButton
+                      >
+                      <NsButton
+                        v-if="user.user_enabled"
+                        kind="ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('disable', user)"
+                        >{{ $t("users.disable") }}</NsButton
+                      >
+                      <NsButton
+                        v-else
+                        kind="ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('enable', user)"
+                        >{{ $t("users.enable") }}</NsButton
+                      >
+                      <NsButton
+                        v-if="user.sso_identifier"
+                        kind="danger--ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('delete-sso', user)"
+                        >{{ $t("users.delete_sso") }}</NsButton
+                      >
+                      <NsButton
+                        kind="danger--ghost"
+                        size="small"
+                        :disabled="busy"
+                        @click="ask('delete', user)"
+                        >{{ $t("users.delete") }}</NsButton
+                      >
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="!users.length">
@@ -332,8 +334,14 @@ export default {
   max-width: 14rem;
 }
 
-.actions,
 .nowrap {
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   white-space: nowrap;
 }
 </style>

@@ -210,6 +210,11 @@ try {
     const row = address => app.locator('tr').filter({hasText: address});
     await row('one@example.test').waitFor();
     await shot(page, 'users');
+    // The actions of a user stand one below the other
+    const boxes = [];
+    for (const name of ['Disable', 'Delete user'])
+      boxes.push(await row('one@example.test').getByRole('button', {name}).boundingBox());
+    assert(Math.abs(boxes[0].x - boxes[1].x) <= 1 && boxes[1].y > boxes[0].y + boxes[0].height - 1, 'actions must be stacked');
     await row('one@example.test').getByRole('button', {name: 'Disable'}).click();
     await confirm(app);
     await row('one@example.test').locator('.bx--tag').filter({hasText: 'Disabled'}).waitFor();
