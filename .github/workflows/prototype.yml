@@ -14,4 +14,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint and build the module page
-        run: docker run --rm -v "$PWD:/usr/src" -w /usr/src/ui docker.io/library/node:24.20.0 sh -c "corepack enable && yarn install --immutable && yarn lint && yarn build"
+        run: docker run --rm -v "$PWD:/usr/src" -w /usr/src/ui docker.io/library/node:24.22.2 sh -c "corepack enable && yarn install --immutable && yarn lint && yarn build"
