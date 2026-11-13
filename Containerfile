@@ -6,8 +6,16 @@ RUN corepack enable && yarn install --immutable
 COPY ui/ ./
 RUN yarn build
 
+# Ship a small, Python-version-independent verifier for the PHC emitted by
+# Vaultwarden. Bullseye's glibc baseline also works on Rocky 9 and Debian 13.
+FROM docker.io/library/debian:bullseye-slim@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd AS credential-verifier
+RUN apt-get update && apt-get install -y --no-install-recommends libargon2-1 \
+    && mkdir /out && cp /usr/lib/*/libargon2.so.1 /out/ \
+    && cp /usr/share/doc/libargon2-1/copyright /out/COPYRIGHT
+
 FROM scratch
 COPY imageroot /imageroot
+COPY --from=credential-verifier /out/ /imageroot/lib/
 COPY --from=ui /usr/src/ui/dist /ui
 ENTRYPOINT ["/"]
 ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:8b045f46220776a4041e0b003f29b12c72593ad84829882ac7c3365a7e0f756e

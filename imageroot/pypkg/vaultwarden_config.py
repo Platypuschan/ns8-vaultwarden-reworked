@@ -7,11 +7,12 @@ import subprocess
 import time
 from pathlib import Path
 import re
-import secrets
 import tempfile
 from urllib.parse import urlsplit
 
 from vaultwarden_admin import SESSION_SECONDS
+from vaultwarden_credentials import (argon2_library, check_worker_credential,
+    ensure_worker_credential, verify_worker_hash)
 
 
 ADMIN_TOKEN = re.compile(r'[A-Za-z0-9_-]{43,128}\Z')
@@ -154,25 +155,13 @@ def argon2_hash(token, image, timeout=90):
 
 
 def write_worker_credential(env_path='vaultwarden.env', token_path=WORKER_TOKEN_FILE, hasher=None):
-    """Make a new worker credential: clear text to token_path, Argon2 hash
-    returned for the ADMIN_TOKEN line. The hash is made first, so a failure
-    leaves the previous pair untouched."""
-    token = secrets.token_urlsafe(48)
-    hashed = (hasher or (lambda t: argon2_hash(t, os.environ['VAULTWARDEN_REWORKED_SERVER_IMAGE'])))(token)
-    if not ADMIN_TOKEN_HASH.fullmatch(hashed):
-        raise ValueError('Invalid admin token hash')
-    private_write(token_path, token + '\n')
-    return hashed
+    """Compatibility entry point for explicit rotation of the canonical record."""
+    return ensure_worker_credential(env_path, token_path, hasher, rotate=True)
 
 
 def admin_token(env_path='vaultwarden.env', token_path=WORKER_TOKEN_FILE, hasher=None):
-    """Return the ADMIN_TOKEN value of the environment file. It is kept only
-    when it is an Argon2 hash with its clear-text worker file; a clear-text
-    token (releases before the hash) or a half restored pair is replaced."""
-    value = env_value('ADMIN_TOKEN', env_path) if os.path.exists(env_path) else None
-    if value and ADMIN_TOKEN_HASH.fullmatch(value) and read_worker_token(token_path):
-        return value
-    return write_worker_credential(env_path, token_path, hasher)
+    """Return the verified canonical hash, migrating/replaying state if needed."""
+    return ensure_worker_credential(env_path, token_path, hasher)
 
 
 def read_worker_token(token_path=WORKER_TOKEN_FILE):
@@ -202,6 +191,11 @@ def private_write(path, text):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
 
@@ -209,10 +203,7 @@ def private_write(path, text):
 def rotate_worker_token(env_path='vaultwarden.env', token_path=WORKER_TOKEN_FILE, hasher=None):
     """Invalidate the internal credential of earlier releases and make a new
     hashed pair."""
-    hashed = write_worker_credential(env_path, token_path, hasher)
-    with open(env_path) as stream:
-        lines = [line for line in stream.read().splitlines() if not line.startswith('ADMIN_TOKEN=')]
-    private_write(env_path, '\n'.join(lines + ['ADMIN_TOKEN=' + hashed]) + '\n')
+    return ensure_worker_credential(env_path, token_path, hasher, rotate=True)
 
 
 def smtp_sender(smarthost, host):

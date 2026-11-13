@@ -9,6 +9,7 @@ WorkingDirectory=%E/state
 Restart=always
 TimeoutStartSec=120
 TimeoutStopSec=70
+ExecStartPre=/usr/local/bin/runagent check-worker-credential
 ExecStartPre=/usr/local/bin/runagent prepare-network
 ExecStartPre=/usr/bin/podman volume create --ignore vaultwarden-data
 # NS8-managed values are read-only in the runtime; ordinary admin settings
