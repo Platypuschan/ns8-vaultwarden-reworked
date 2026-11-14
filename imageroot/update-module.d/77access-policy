@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
-"""Pin the existing policy before starting the stateless revocation worker."""
+"""Pin the existing policy and ensure coherent credentials without update rotation."""
 import json
 import subprocess
+import sys
 import vaultwarden_revoke as revoke
 from pathlib import Path
 import agent
 import vaultwarden_config as policy
 import vaultwarden_sso as sso
+
 if Path('vaultwarden.env').exists():
-    with agent.exclusive_file_lock('configuration'):
-        config = policy.validate(json.loads(Path('settings.json').read_text()))
-        sso.prepare(config)
-        state = sso.task(config, 'get-client-access', {'domain': config['domain']})
-        if 'policy_consumer_bound' not in state:
-            # The revocation timer ends all sessions until the IdP is updated
-            raise SystemExit('Update the IdP module first (0.1.0-rc.4 or later), then update Vaultwarden again')
-        policy.require_policy(config, state)
-        policy.rotate_worker_token()
-        if subprocess.run(['systemctl', '--user', '-q', 'is-enabled', 'vaultwarden.service']).returncode == 0:
-            revoke.initialize_status()
+    try:
+        with agent.exclusive_file_lock('configuration'):
+            config = policy.validate(json.loads(Path('settings.json').read_text()))
+            sso.prepare(config)
+            state = sso.task(config, 'get-client-access', {'domain': config['domain']})
+            if 'policy_consumer_bound' not in state:
+                raise ValueError('Update the IdP module first')
+            policy.require_policy(config, state)
+            policy.ensure_worker_credential()
+            policy.check_worker_credential()
+            if subprocess.run(['systemctl', '--user', '-q', 'is-enabled', 'vaultwarden.service']).returncode == 0:
+                revoke.initialize_status()
+    except Exception:
+        # Core logs failed hooks but still runs 80restart. Stop immediately as
+        # well; independent restart/service gates do not rely on this exit code.
+        subprocess.run(['systemctl', '--user', 'stop', 'vaultwarden.service',
+            'vaultwarden-revoke.timer', 'vaultwarden-revoke.service'], check=False)
+        print('Vaultwarden access policy/credentials unavailable; startup refused. '
+              'Check IdP policy and worker credential recovery.', file=sys.stderr)
+        sys.exit(1)

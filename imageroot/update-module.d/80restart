@@ -1,5 +1,11 @@
 #!/bin/bash
 set -Eeuo pipefail
+# Core continues after failed hooks. Independently refuse an incoherent start,
+# and stop an already running app rather than leaving revocation ineffective.
+if [[ -f vaultwarden.env ]] && ! check-worker-credential; then
+    systemctl --user stop vaultwarden.service vaultwarden-revoke.timer vaultwarden-revoke.service
+    exit 1
+fi
 if systemctl --user is-enabled --quiet vaultwarden.service; then
     systemctl --user restart vaultwarden.service
 fi

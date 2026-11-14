@@ -134,6 +134,7 @@ Upgrade configured installation to released rc.7 before regression check
     Should Be Equal As Integers    ${rc}    0
 
 Upgrade configured rc.7 to persistent device sessions
+    ${was_hashed} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.argon2id.' vaultwarden.env    return_rc=True    return_stdout=False
     ${worker_before} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
     ${env_before} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS|SSO_AUTH_ONLY_NOT_SESSION)=' vaultwarden.env | sha256sum"
     ${key_before} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
@@ -142,7 +143,11 @@ Upgrade configured rc.7 to persistent device sessions
     ${env_after} =    Execute Command    runagent -m ${APP} sh -c "grep -v -E '^(NS8_MANAGED_CONFIG|ADMIN_RATELIMIT_MAX_BURST|ALLOWED_IFRAME_ANCESTORS|ADMIN_TOKEN|NS8_ADMIN_SESSION_SECONDS|SSO_AUTH_ONLY_NOT_SESSION)=' vaultwarden.env | sha256sum"
     ${key_after} =    Execute Command    runagent -m ${APP} podman exec vaultwarden-app sha256sum /data/rsa_key.pem
     ${worker_after} =    Execute Command    runagent -m ${APP} sh -c "grep '^ADMIN_TOKEN=' vaultwarden.env | sha256sum"
-    Should Not Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
+    IF    ${was_hashed} == 0
+        Should Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
+    ELSE
+        Should Not Be Equal    ${worker_before.strip()}    ${worker_after.strip()}
+    END
     ${required} =    Run task    module/${IDP}/get-client-access    {"domain":"${DOMAIN}","client_id":"${APP}"}
     Should Be True    ${required['policy_required']}
     Should Be True    ${required['policy_group_pinned']}
@@ -159,6 +164,21 @@ Upgrade configured rc.7 to persistent device sessions
     Policy is enforced
     ${rc} =    Execute Command    runagent -m ${APP} test -f vaultwarden-network.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
+
+Second update preserves the verified worker credential
+    ${before} =    Execute Command    runagent -m ${APP} sha256sum worker-credential.json
+    Run task    cluster/update-module    {"module_url":"${IMAGE_URL}","instances":["${APP}"]}    decode_json=${FALSE}
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
+    ${after} =    Execute Command    runagent -m ${APP} sha256sum worker-credential.json
+    Should Be Equal    ${before.strip()}    ${after.strip()}
+    ${rc} =    Execute Command    runagent -m ${APP} check-worker-credential    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+
+Incoherent credentials refuse service and worker startup
+    SSHLibrary.Put File    ${CURDIR}/check_worker_credential.py    /tmp/vw-check-worker-credential.py
+    ${rc} =    Execute Command    runagent -m ${APP} python3 /tmp/vw-check-worker-credential.py    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    Wait Until Keyword Succeeds    120s    3s    App is healthy
 
 Rollback to the previous releases and forward again
     # Downgrades are not supported by NS8 itself; the data and the access policy must survive them anyway
@@ -217,10 +237,10 @@ Revocation timer and authenticated admin pages
     # The server holds only an Argon2id hash; the clear text is in a private file for the worker
     ${rc} =    Execute Command    runagent -m ${APP} grep -q '^ADMIN_TOKEN=.argon2id.v=19.' vaultwarden.env    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
-    ${mode} =    Execute Command    timeout 60 runagent -m ${APP} stat -c %a admin-worker.token
+    ${mode} =    Execute Command    timeout 60 runagent -m ${APP} stat -c %a worker-credential.json
     Should Be Equal    ${mode.strip()}    600
-    ${leak} =    Execute Command    timeout 60 runagent -m ${APP} sh -c 'grep -c -F -f admin-worker.token vaultwarden.env || true'
-    Should Be Equal    ${leak.strip()}    0
+    ${rc} =    Execute Command    timeout 60 runagent -m ${APP} python3 -c 'import vaultwarden_config as p; t=p.check_worker_credential(); assert t not in open("vaultwarden.env").read()'    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
     # Anonymous admin navigation is denied; the NS8 UI uses its authenticated POST bridge.
     ${ip} =    Execute Command    hostname -I | awk '{print $1}'
     ${code} =    Execute Command    curl -sk -o /dev/null -w '\%{http_code}' --resolve ${APP_HOST}:443:${ip.strip()} https://${APP_HOST}/admin

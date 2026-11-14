@@ -174,13 +174,27 @@ class RevokeTests(unittest.TestCase):
         with self.assertRaises(revoke.RevokeError):
             revoke.read_admin_token(token,env)
         token.write_text(clear+'\n')
+        # Syntax alone is no proof of coherence.
+        with self.assertRaises(revoke.RevokeError):
+            revoke.read_admin_token(token,env)
+        import vaultwarden_config as policy
+        from test_worker_credential import real_hash
+        policy.private_write(env, 'ADMIN_TOKEN=' + real_hash(clear) + '\n')
+        policy.ensure_worker_credential(env, token)
         self.assertEqual(revoke.read_admin_token(token,env),clear)
 
-    def test_clear_text_environment_token_of_earlier_releases_still_works_until_update(self):
+    def test_clear_text_environment_needs_migration_before_worker_use(self):
         env=Path(self.dir.name)/'vaultwarden.env'
         token=Path(self.dir.name)/'admin-worker.token'
         env.write_text('SSO_ONLY=true\nADMIN_TOKEN=abc\n')
-        self.assertEqual(revoke.read_admin_token(token,env),'abc')
+        with self.assertRaises(revoke.RevokeError):
+            revoke.read_admin_token(token,env)
+        # Legacy cleartext is migratable, but never usable by an unchecked worker.
+        import vaultwarden_config as policy
+        from test_worker_credential import real_hash
+        policy.private_write(env, 'ADMIN_TOKEN=' + 't' * 64 + '\n')
+        policy.ensure_worker_credential(env, token, hasher=real_hash)
+        self.assertEqual(revoke.read_admin_token(token,env), 't' * 64)
         env.write_text('SSO_ONLY=true\n')
         with self.assertRaises(revoke.RevokeError):
             revoke.read_admin_token(token,env)

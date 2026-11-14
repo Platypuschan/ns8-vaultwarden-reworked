@@ -275,26 +275,15 @@ def reconcile(api, members, state_dir='.'):
 
 
 def read_admin_token(token_path='admin-worker.token', env_path='vaultwarden.env'):
-    """Clear-text worker credential. vaultwarden.env holds only its Argon2 hash;
-    a clear-text ADMIN_TOKEN there (release before the hash) is still usable
-    until the next update replaces it."""
-    from vaultwarden_config import ADMIN_TOKEN, ADMIN_TOKEN_HASH
+    """Read the canonical secret only when its real hash matches the environment.
+    Old backups must first pass the locked lifecycle migration, never bypass
+    the read-only worker start gate.
+    """
+    from vaultwarden_config import check_worker_credential
     try:
-        with open(token_path) as f:
-            value = f.read().strip()
-        if ADMIN_TOKEN.fullmatch(value):
-            return value
-    except FileNotFoundError:
-        pass
-    try:
-        with open(env_path) as f:
-            for line in f:
-                name, _, value = line.rstrip('\n').partition('=')
-                if name == 'ADMIN_TOKEN' and value and not ADMIN_TOKEN_HASH.fullmatch(value):
-                    return value
-    except FileNotFoundError:
-        pass
-    raise RevokeError('The admin worker token is missing')
+        return check_worker_credential(env_path, token_path)
+    except Exception:
+        raise RevokeError('Worker credentials are incoherent or unavailable') from None
 
 
 STATUS_FILE = 'revocation-status.json'

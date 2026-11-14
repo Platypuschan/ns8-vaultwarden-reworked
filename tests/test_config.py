@@ -15,9 +15,8 @@ HASH='$argon2id$v=19$m=19456,t=2,p=1$jXKqQhjZLkgo5+O0dKS+QmNa2/Fq00DnaduYD1Uip04
 
 
 def fake_hash(token):
-    import base64, hashlib
-    digest = base64.b64encode(hashlib.sha256(token.encode()).digest()).decode().rstrip('=')
-    return '$argon2id$v=19$m=19456,t=2,p=1$' + digest[:22] + '$' + digest
+    from test_worker_credential import real_hash
+    return real_hash(token)
 
 
 class ConfigTests(unittest.TestCase):
@@ -35,7 +34,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text('ADMIN_TOKEN=previously-exported\nSSO_CLIENT_SECRET=keep-this\nDOMAIN=https://vault.example.test\n')
             policy.rotate_worker_token(path, token, hasher=fake_hash)
             values = dict(line.split('=', 1) for line in path.read_text().splitlines())
-            clear = token.read_text().strip()
+            clear = policy.check_worker_credential(path, token)
             self.assertRegex(clear, policy.ADMIN_TOKEN)
             self.assertEqual(values['ADMIN_TOKEN'], fake_hash(clear))
             self.assertNotIn(clear, path.read_text())
@@ -43,7 +42,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(values['SSO_CLIENT_SECRET'], 'keep-this')
             self.assertEqual(values['DOMAIN'], 'https://vault.example.test')
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(token.stat().st_mode & 0o777, 0o600)
+            self.assertEqual((Path(directory) / 'worker-credential.json').stat().st_mode & 0o777, 0o600)
 
     def test_failed_hashing_leaves_previous_pair_untouched(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -57,27 +56,27 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(path.read_text(), 'ADMIN_TOKEN=' + HASH + '\n')
             self.assertEqual(token.read_text(), 'o' * 64 + '\n')
 
-    def test_admin_token_keeps_complete_hashed_pair_and_replaces_others(self):
+    def test_admin_token_keeps_canonical_pair_and_repairs_projection(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'vaultwarden.env'
             token = Path(directory) / 'admin-worker.token'
             # new installation
             first = policy.admin_token(path, token, hasher=fake_hash)
             self.assertRegex(first, policy.ADMIN_TOKEN_HASH)
-            path.write_text('ADMIN_TOKEN=' + first + '\n')
-            clear = token.read_text()
+            policy.private_write(path, 'ADMIN_TOKEN=' + first + '\n')
+            clear = policy.check_worker_credential(path, token)
             self.assertEqual(policy.admin_token(path, token, hasher=fake_hash), first)
-            self.assertEqual(token.read_text(), clear)
+            self.assertEqual(policy.check_worker_credential(path, token), clear)
             # clear-text token of an earlier release
             path.write_text('ADMIN_TOKEN=' + 'c' * 64 + '\n')
             replaced = policy.admin_token(path, token, hasher=fake_hash)
             self.assertRegex(replaced, policy.ADMIN_TOKEN_HASH)
-            self.assertNotEqual(token.read_text(), clear)
+            self.assertEqual(policy.check_worker_credential(path, token), clear)
             # restored environment without the clear-text file
             path.write_text('ADMIN_TOKEN=' + replaced + '\n')
-            token.unlink()
-            self.assertNotEqual(policy.admin_token(path, token, hasher=fake_hash), replaced)
-            self.assertTrue(token.exists())
+            token.unlink(missing_ok=True)
+            self.assertEqual(policy.admin_token(path, token, hasher=fake_hash), replaced)
+            self.assertEqual(policy.check_worker_credential(path, token), clear)
 
     def test_environment_accepts_a_hash_but_not_other_token_shapes(self):
         env = policy.environment(policy.validate(self.config), self.registration, HASH)
