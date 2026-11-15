@@ -18,7 +18,7 @@ COPY imageroot /imageroot
 COPY --from=credential-verifier /out/ /imageroot/lib/
 COPY --from=ui /usr/src/ui/dist /ui
 ENTRYPOINT ["/"]
-ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:8b045f46220776a4041e0b003f29b12c72593ad84829882ac7c3365a7e0f756e
+ARG VAULTWARDEN_IMAGE=ghcr.io/platypuschan/vaultwarden-reworked-server@sha256:0020ceec042689499880786e6224ab2b030d33864e2e063c4a73f6a9448ad91e
 LABEL org.opencontainers.image.source="https://github.com/Platypuschan/ns8-vaultwarden-reworked" \
       org.nethserver.authorizations="traefik@node:routeadm cluster:accountconsumer idp-reworked@any:clientadm" \
       org.nethserver.tcp-ports-demand="1" \
